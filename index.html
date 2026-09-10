@@ -130,32 +130,90 @@
             margin-top: 4px;
         }
         
-        /* Assinatura Corrigida e Alinhada */
-        .signature-container {
+        /* Caixa de Assinatura (Exibição da Imagem capturada ou Botão) */
+        .signature-preview-container {
             border: 1px dashed #777;
             background: #fafafa;
-            position: relative;
-            height: 90px;
+            height: 70px;
             margin-top: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            position: relative;
         }
-        canvas {
+        .signature-preview-container img {
+            max-height: 100%;
+            max-width: 100%;
+            object-fit: contain;
+        }
+        .signature-placeholder {
+            font-size: 12px;
+            color: #555;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        /* MODAL DE ASSINATURA EM TELA CHEIA */
+        #signature-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 9999;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        #signature-modal.active {
+            display: flex;
+        }
+        .modal-header {
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-header h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+        .modal-canvas-wrapper {
+            flex: 1;
+            background: white;
+            margin: 15px 0;
+            border-radius: 8px;
+            position: relative;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
+            overflow: hidden;
+        }
+        #sig-canvas {
             display: block;
             width: 100%;
             height: 100%;
             touch-action: none;
             cursor: crosshair;
         }
-        .clear-sig {
-            position: absolute;
-            top: 2px;
-            right: 2px;
-            font-size: 10px;
-            background: #ccc;
-            border: none;
-            cursor: pointer;
-            padding: 2px 5px;
-            z-index: 10;
+        .modal-footer {
+            display: flex;
+            gap: 15px;
+            justify-content: flex-end;
         }
+        .btn-modal {
+            padding: 12px 25px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .btn-modal-clear { background-color: #ffc107; color: #000; }
+        .btn-modal-cancel { background-color: #6c757d; color: white; }
+        .btn-modal-save { background-color: #28a745; color: white; }
 
         /* Mídia e Botões de Ação */
         .media-section {
@@ -252,7 +310,7 @@
                     </div>
                     <div class="form-group" style="flex: 1;">
                         <label>Contato do responsável:</label>
-                        <input type="tel" id="contato_responsavel" inputmode="numeric" maxlength="15" placeholder="(11) 96842-4806" required>
+                        <input type="tel" id="contato_responsavel" inputmode="numeric" maxlength="15" placeholder="(11) 91234-5678" required>
                     </div>
                 </div>
 
@@ -325,10 +383,11 @@
                     </div>
                     <div class="form-group">
                         <label>Assinatura do Responsável</label>
-                        <div class="signature-container">
-                            <button type="button" class="clear-sig" onclick="clearSignature()">Limpar</button>
-                            <canvas id="sig-canvas"></canvas>
+                        <div class="signature-preview-container" onclick="openSignatureModal()">
+                            <span id="sig-placeholder" class="signature-placeholder">Clique aqui para assinar em tela cheia</span>
+                            <img id="sig-image-preview" src="" alt="" style="display: none;">
                         </div>
+                        <input type="hidden" id="assinatura_base64" required>
                     </div>
                 </div>
             </form>
@@ -367,6 +426,22 @@
         </div>
     </div>
 
+    <!-- MODAL DE ASSINATURA EM TELA CHEIA -->
+    <div id="signature-modal">
+        <div class="modal-header">
+            <h3>Assinatura do Responsável</h3>
+            <span style="font-size: 13px; color: #aaa;">Gire o celular se preferir mais espaço</span>
+        </div>
+        <div class="modal-canvas-wrapper">
+            <canvas id="sig-canvas"></canvas>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-modal btn-modal-clear" onclick="clearModalSignature()">Limpar</button>
+            <button class="btn-modal btn-modal-cancel" onclick="closeSignatureModal()">Cancelar</button>
+            <button class="btn-modal btn-modal-save" onclick="saveSignatureModal()">Confirmar Assinatura</button>
+        </div>
+    </div>
+
     <script>
         // ================= CONFIGURAÇÃO DO FIREBASE =================
         const firebaseConfig = {
@@ -399,18 +474,17 @@
         function showScreen(screenId) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
             document.getElementById(screenId).classList.add('active');
-            
-            // Garante o redimensionamento perfeito do canvas ao alternar telas
-            if (screenId === 'form-screen' && canvas) {
-                setTimeout(resizeCanvas, 50);
-            }
         }
 
         function openNewForm() {
             document.getElementById('rac-form').reset();
             document.getElementById('colaborador_brmobility').value = "Téc. Externo Brandon de Freitas";
             setupAutoDateTime();
-            clearSignature();
+            clearModalSignature();
+            document.getElementById('assinatura_base64').value = "";
+            document.getElementById('sig-image-preview').style.display = 'none';
+            document.getElementById('sig-placeholder').style.display = 'block';
+            
             selectedPhotos = [];
             selectedVideoName = "";
             document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
@@ -450,22 +524,10 @@
             });
         }
 
-        // ================= ASSINATURA CORRIGIDA =================
-        function resizeCanvas() {
-            if (!canvas) return;
-            const rect = canvas.getBoundingClientRect();
-            if (rect.width > 0 && rect.height > 0) {
-                canvas.width = rect.width;
-                canvas.height = rect.height;
-            }
-        }
-
+        // ================= ASSINATURA EM TELA CHEIA (MODAL) =================
         function initSignaturePad() {
             canvas = document.getElementById('sig-canvas');
             ctx = canvas.getContext('2d');
-            
-            window.addEventListener('resize', resizeCanvas);
-            resizeCanvas();
 
             const getPos = (e) => {
                 const rect = canvas.getBoundingClientRect();
@@ -488,7 +550,7 @@
             const draw = (e) => {
                 if (!painting) return;
                 e.preventDefault();
-                ctx.lineWidth = 2;
+                ctx.lineWidth = 3;
                 ctx.lineCap = 'round';
                 ctx.strokeStyle = '#000';
 
@@ -507,10 +569,39 @@
             canvas.addEventListener('touchmove', draw, { passive: false });
         }
 
-        function clearSignature() {
+        function openSignatureModal() {
+            const modal = document.getElementById('signature-modal');
+            modal.classList.add('active');
+            
+            // Redimensiona o canvas para ocupar perfeitamente o espaço do modal aberto
+            setTimeout(() => {
+                const rect = canvas.parentElement.getBoundingClientRect();
+                canvas.width = rect.width;
+                canvas.height = rect.height;
+            }, 50);
+        }
+
+        function closeSignatureModal() {
+            document.getElementById('signature-modal').classList.remove('active');
+        }
+
+        function clearModalSignature() {
             if (ctx && canvas) {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
             }
+        }
+
+        function saveSignatureModal() {
+            const dataURL = canvas.toDataURL('image/png');
+            document.getElementById('assinatura_base64').value = dataURL;
+
+            // Mostra a miniatura da assinatura na tela principal
+            const imgPreview = document.getElementById('sig-image-preview');
+            imgPreview.src = dataURL;
+            imgPreview.style.display = 'block';
+            document.getElementById('sig-placeholder').style.display = 'none';
+
+            closeSignatureModal();
         }
 
         function setupMediaValidation() {
@@ -546,6 +637,11 @@
                 return;
             }
 
+            if (!document.getElementById('assinatura_base64').value) {
+                alert("A assinatura do responsável é obrigatória. Clique na caixa de assinatura para assinar.");
+                return;
+            }
+
             if (selectedPhotos.length < 1 || selectedPhotos.length > 5) {
                 alert("É obrigatório anexar de 1 a 5 fotos para prosseguir.");
                 return;
@@ -577,7 +673,7 @@
                     veiculos_entrando: document.getElementById('veiculos_entrando').value,
                     observacoes: document.getElementById('observacoes').value,
                     colaborador_brmobility: document.getElementById('colaborador_brmobility').value,
-                    assinatura_responsavel: canvas.toDataURL('image/png'),
+                    assinatura_responsavel: document.getElementById('assinatura_base64').value,
                     qtd_fotos: selectedPhotos.length,
                     tem_video: selectedVideoName ? "Sim" : "Não",
                     createdAt: new Date().toISOString()
@@ -702,12 +798,11 @@
             document.getElementById('colaborador_brmobility').value = data.colaborador_brmobility || '';
 
             if (data.assinatura_responsavel) {
-                const img = new Image();
-                img.onload = () => {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.drawImage(img, 0, 0);
-                };
-                img.src = data.assinatura_responsavel;
+                document.getElementById('assinatura_base64').value = data.assinatura_responsavel;
+                const imgPreview = document.getElementById('sig-image-preview');
+                imgPreview.src = data.assinatura_responsavel;
+                imgPreview.style.display = 'block';
+                document.getElementById('sig-placeholder').style.display = 'none';
             }
 
             showScreen('form-screen');
