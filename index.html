@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>RAC - Relatório de Atendimento ao Cliente</title>
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -122,7 +122,7 @@
             margin-top: 4px;
         }
         
-        /* Modal Tela Cheia de Assinatura */
+        /* Modal Tela Cheia de Assinatura Otimizado para Celular */
         #signature-modal {
             display: none;
             position: fixed;
@@ -130,27 +130,42 @@
             left: 0;
             width: 100vw;
             height: 100vh;
-            background: white;
-            z-index: 9999;
+            background: #ffffff;
+            z-index: 99999;
             flex-direction: column;
-            padding: 15px;
+            justify-content: space-between;
+            padding: 10px;
             box-sizing: border-box;
         }
         #signature-modal.active {
             display: flex;
         }
+        .sig-modal-header {
+            text-align: center;
+            font-weight: bold;
+            font-size: 14px;
+            padding: 5px 0;
+            color: #333;
+        }
         .sig-canvas-box {
-            flex: 1;
-            border: 2px dashed #333;
+            width: 100%;
+            height: 70vh;
+            border: 2px dashed #00778f;
             background: #fafafa;
             position: relative;
-            margin-bottom: 10px;
+            box-sizing: border-box;
         }
         canvas {
+            display: block;
             width: 100%;
             height: 100%;
             touch-action: none;
             cursor: crosshair;
+        }
+        .sig-modal-footer {
+            display: flex;
+            gap: 10px;
+            padding: 5px 0;
         }
         .sig-preview-box {
             border: 1px solid #777;
@@ -181,7 +196,7 @@
             flex-wrap: wrap;
         }
         .btn-action {
-            padding: 10px 20px;
+            padding: 12px 20px;
             font-size: 14px;
             font-weight: bold;
             border: none;
@@ -350,13 +365,13 @@
         </div>
     </div>
 
-    <!-- MODAL TELA CHEIA DE ASSINATURA -->
+    <!-- MODAL TELA CHEIA DE ASSINATURA OTIMIZADO -->
     <div id="signature-modal">
-        <h3 style="margin: 0 0 10px 0; text-align: center;">Assine no espaço abaixo</h3>
+        <div class="sig-modal-header">Assine no espaço abaixo e clique em Concluir</div>
         <div class="sig-canvas-box">
             <canvas id="sig-canvas"></canvas>
         </div>
-        <div style="display: flex; gap: 10px; justify-content: space-between;">
+        <div class="sig-modal-footer">
             <button class="btn-action" style="background:#dc3545; color:white; flex:1;" onclick="clearSignatureModal()">Limpar</button>
             <button class="btn-action btn-save" style="flex:1;" onclick="saveSignatureModal()">Concluir Assinatura</button>
         </div>
@@ -434,19 +449,10 @@
             document.getElementById('horario_atendimento').value = `${hours}:${minutes}`;
         }
 
-        // TELA CHEIA DE ASSINATURA
         function initModalSignaturePad() {
             modalCanvas = document.getElementById('sig-canvas');
             modalCtx = modalCanvas.getContext('2d');
             
-            function resizeModalCanvas() {
-                const rect = modalCanvas.getBoundingClientRect();
-                modalCanvas.width = rect.width;
-                modalCanvas.height = rect.height;
-            }
-            window.addEventListener('resize', resizeModalCanvas);
-            resizeModalCanvas();
-
             const getPos = (e) => {
                 const rect = modalCanvas.getBoundingClientRect();
                 const clientX = e.clientX || (e.touches && e.touches[0].clientX);
@@ -483,7 +489,7 @@
                 const rect = modalCanvas.getBoundingClientRect();
                 modalCanvas.width = rect.width;
                 modalCanvas.height = rect.height;
-            }, 200);
+            }, 100);
         }
 
         function clearSignatureModal() {
@@ -518,7 +524,6 @@
             });
         }
 
-        // SALVAR NO FIREBASE CORRIGIDO
         async function salvarFicha() {
             const form = document.getElementById('rac-form');
             if (!form.checkValidity()) {
@@ -591,7 +596,7 @@
                 document.getElementById('btn-whatsapp').style.display = 'inline-block';
             } catch (error) {
                 console.error("Erro ao salvar:", error);
-                alert("Erro ao salvar. Verifique se as Regras do Firestore/Storage estão públicas no painel do Firebase.");
+                alert("Erro ao salvar. Verifique se as Regras do Firestore/Storage estão públicas.");
             } finally {
                 btnSalvar.innerText = "Salvar Ficha";
                 btnSalvar.disabled = false;
