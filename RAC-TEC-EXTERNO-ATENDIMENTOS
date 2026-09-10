@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAC - Relatório de Atendimento ao Cliente</title>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+    
+    <style>
+        :root {
+            --primary-color: #00778f;
+            --border-color: #333;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 10px;
+            background-color: #f4f4f4;
+            color: #000;
+        }
+        .screen {
+            display: none;
+            max-width: 800px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            box-sizing: border-box;
+        }
+        .screen.active {
+            display: block;
+        }
+        /* Tela Inicial */
+        #home-screen {
+            text-align: center;
+            padding: 50px 20px;
+        }
+        .home-btn {
+            display: block;
+            width: 100%;
+            max-width: 400px;
+            margin: 20px auto;
+            padding: 15px;
+            font-size: 18px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .home-btn:hover {
+            opacity: 0.9;
+        }
+
+        /* Documento RAC Layout Estrito */
+        .rac-container {
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            background: #fff;
+        }
+        .rac-header, .rac-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+        }
+        .rac-footer {
+            border-bottom: none;
+            border-top: 2px solid var(--border-color);
+            padding-top: 10px;
+            margin-top: 10px;
+        }
+        .rac-logo {
+            max-height: 50px;
+        }
+        h2.rac-title {
+            text-align: center;
+            font-size: 18px;
+            margin: 10px 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .section-title {
+            background-color: #ddd;
+            font-weight: bold;
+            padding: 4px 8px;
+            margin-top: 10px;
+            margin-bottom: 8px;
+            font-size: 14px;
+            border: 1px solid #bbb;
+        }
+        .form-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        .form-group {
+            flex: 1;
+            min-width: 180px;
+            display: flex;
+            flex-direction: column;
+        }
+        .form-group label {
+            font-weight: bold;
+            margin-bottom: 2px;
+            font-size: 12px;
+        }
+        input[type="text"], input[type="tel"], input[type="date"], input[type="time"], select, textarea {
+            padding: 6px;
+            border: 1px solid #777;
+            border-radius: 3px;
+            font-size: 13px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        textarea {
+            resize: vertical;
+            height: 60px;
+        }
+        .radio-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-top: 4px;
+        }
+        
+        /* Assinatura */
+        .signature-container {
+            border: 1px dashed #777;
+            background: #fafafa;
+            position: relative;
+            height: 100px;
+            margin-top: 5px;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+            cursor: crosshair;
+        }
+        .clear-sig {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            font-size: 10px;
+            background: #ccc;
+            border: none;
+            cursor: pointer;
+            padding: 2px 5px;
+        }
+
+        /* Mídia e Botões de Ação */
+        .media-section {
+            margin-top: 15px;
+            border-top: 1px dashed #ccc;
+            padding-top: 10px;
+        }
+        .action-bar {
+            margin-top: 20px;
+            text-align: center;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn-action {
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .btn-save { background-color: #28a745; color: white; }
+        .btn-whatsapp { background-color: #25d366; color: white; display: none; }
+        .btn-back { background-color: #6c757d; color: white; }
+        
+        /* Lista de Fichas Salvas */
+        .saved-item {
+            background: #fff;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 1. TELA INICIAL -->
+    <div id="home-screen" class="screen active">
+        <h1>BRMobility</h1>
+        <p>Relatório de Atendimento ao Cliente (RAC)</p>
+        <button class="home-btn" onclick="openNewForm()">Nova Ficha (RAC) de atendimento</button>
+        <button class="home-btn" style="background-color: #555;" onclick="openSavedList()">Fichas (RAC) Salvas</button>
+    </div>
+
+    <!-- 2. TELA DE NOVA FICHA (RAC) -->
+    <div id="form-screen" class="screen">
+        <div class="rac-container">
+            <!-- Cabeçalho Institucional Original -->
+            <div class="rac-header">
+                <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" alt="Logo" class="rac-logo" id="logo-placeholder">
+                <h2 class="rac-title">RELATÓRIO DE ATENDIMENTO AO CLIENTE</h2>
+            </div>
+
+            <form id="rac-form" onsubmit="return false;">
+                <div class="section-title">INFORMAÇÕES</div>
+                <div class="form-row">
+                    <div class="form-group" style="flex: 2;">
+                        <label>Cliente:</label>
+                        <input type="text" id="cliente" required>
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label>Nº Chamado:</label>
+                        <input type="tel" id="num_chamado" pattern="[0-9]*" inputmode="numeric" required placeholder="Ex: 02568">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Data de abertura:</label>
+                        <input type="tel" id="data_abertura" inputmode="numeric" placeholder="DD/MM/AAAA" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Data de atendimento:</label>
+                        <input type="date" id="data_atendimento" required readonly>
+                    </div>
+                    <div class="form-group">
+                        <label>Horário de atendimento:</label>
+                        <input type="time" id="horario_atendimento" required readonly>
+                    </div>
+                </div>
+
+                <div class="section-title">ATENDIMENTO</div>
+                <div class="form-row">
+                    <div class="form-group" style="flex: 2;">
+                        <label>Responsável no atendimento:</label>
+                        <input type="text" id="responsavel" required>
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label>Contato do responsável:</label>
+                        <input type="tel" id="contato_responsavel" inputmode="numeric" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Modelo veículo(s):</label>
+                        <select id="modelo_veiculos" required>
+                            <option value="">Selecione o modelo</option>
+                            <option value="i2">i2</option>
+                            <option value="X2">X2</option>
+                            <option value="i3">i3</option>
+                            <option value="X3">X3</option>
+                            <option value="S1">S1</option>
+                            <option value="S6">S6</option>
+                            <option value="S8">S8</option>
+                            <option value="R8">R8</option>
+                            <option value="BR8">BR8</option>
+                            <option value="S9">S9</option>
+                            <option value="S9X">S9X</option>
+                            <option value="H9">H9</option>
+                            <option value="H9X">H9X</option>
+                            <option value="S10">S10</option>
+                            <option value="S10X">S10X</option>
+                            <option value="VIP">VIP</option>
+                            <option value="VIPS">VIPS</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Nº de Patrimônio:</label>
+                        <input type="tel" id="num_patrimonio" inputmode="numeric" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Utilização:</label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="utilizacao" value="interna" required> interna</label>
+                            <label><input type="radio" name="utilizacao" value="externa" required> externa</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Solicitação:</label>
+                        <textarea id="solicitacao" required></textarea>
+                    </div>
+                </div>
+
+                <div class="section-title">OBSERVAÇÕES</div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Veículo(s) saindo:</label>
+                        <input type="text" id="veiculos_saindo" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Veículo(s) entrando:</label>
+                        <input type="text" id="veiculos_entrando" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Observações gerais:</label>
+                        <textarea id="observacoes" required></textarea>
+                    </div>
+                </div>
+
+                <!-- Seção de Evidências (Fotos e Vídeo exigidos pelas regras) -->
+                <div class="media-section">
+                    <div class="form-group">
+                        <label>Fotos (Mínimo 1, Máximo 5 obrigatórias):</label>
+                        <input type="file" id="input-fotos" accept="image/*" multiple capture="environment">
+                        <small id="foto-contador" style="color: #666; margin-top: 3px;">Nenhuma foto selecionada</small>
+                    </div>
+                    <div class="form-group" style="margin-top: 10px;">
+                        <label>Vídeo (Opcional):</label>
+                        <input type="file" id="input-video" accept="video/*" capture="environment">
+                    </div>
+                </div>
+
+                <div class="rac-footer">
+                    <div class="form-group">
+                        <label>Colaborador BRMobility</label>
+                        <input type="text" id="colaborador_brmobility" value="Téc. Externo Brandon de Freitas" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label>Assinatura do Responsável</label>
+                        <div class="signature-container">
+                            <button type="button" class="clear-sig" onclick="clearSignature()">Limpar</button>
+                            <canvas id="sig-canvas"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </form>
+
+            <div class="action-bar">
+                <button class="btn-action btn-back" onclick="showScreen('home-screen')">Voltar</button>
+                <button class="btn-action btn-save" id="btn-salvar" onclick="salvarFicha()">Salvar Ficha</button>
+                <button class="btn-action btn-whatsapp" id="btn-whatsapp" onclick="enviarWhatsApp()">WhatsApp Operacional</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. TELA DE FICHAS SALVAS -->
+    <div id="saved-screen" class="screen">
+        <h2>Fichas (RAC) Salvas</h2>
+        <div id="saved-list-container">
+            <p>Carregando fichas...</p>
+        </div>
+        <div class="action-bar" style="margin-top: 20px;">
+            <button class="btn-action btn-back" onclick="showScreen('home-screen')">Voltar</button>
+        </div>
+    </div>
+
+    <script>
+        // ================= CONFIGURAÇÃO DO FIREBASE =================
+        // ATENÇÃO: Substitua os valores abaixo pelas credenciais reais do seu projeto Firebase
+        const firebaseConfig = {
+            apiKey: "SUA_API_KEY",
+            authDomain: "SEU_AUTH_DOMAIN",
+            projectId: "SEU_PROJECT_ID",
+            storageBucket: "SEU_STORAGE_BUCKET",
+            messagingSenderId: "SEU_MESSAGING_SENDER_ID",
+            appId: "SEU_APP_ID"
+        };
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+        const storage = firebase.storage();
+
+        // Variáveis globais para controle
+        let canvas, ctx, painting = false;
+        let selectedPhotos = [];
+        let selectedVideo = null;
+        let currentSavedData = null;
+
+        document.addEventListener("DOMContentLoaded", () => {
+            initSignaturePad();
+            setupAutoDateTime();
+            setupPhotoValidation();
+            
+            // Monitorar preenchimento para liberar o botão de WhatsApp se salvo
+            const formInputs = document.querySelectorAll('#rac-form input, #rac-form select, #rac-form textarea');
+            formInputs.forEach(input => {
+                input.addEventListener('input', checkFormValidity);
+                input.addEventListener('change', checkFormValidity);
+            });
+        });
+
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+        }
+
+        function openNewForm() {
+            document.getElementById('rac-form').reset();
+            document.getElementById('colaborador_brmobility').value = "Téc. Externo Brandon de Freitas";
+            setupAutoDateTime();
+            clearSignature();
+            selectedPhotos = [];
+            selectedVideo = null;
+            document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
+            document.getElementById('btn-whatsapp').style.display = 'none';
+            showScreen('form-screen');
+        }
+
+        function setupAutoDateTime() {
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            document.getElementById('data_atendimento').value = `${yyyy}-${mm}-${dd}`;
+            
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('horario_atendimento').value = `${hours}:${minutes}`;
+        }
+
+        // ================= ASSINATURA DIGITAL POR TOQUE =================
+        function initSignaturePad() {
+            canvas = document.getElementById('sig-canvas');
+            ctx = canvas.getContext('2d');
+            
+            function resizeCanvas() {
+                const rect = canvas.getBoundingClientRect();
+                canvas.width = rect.width;
+                canvas.height = rect.height;
+            }
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            const getPos = (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+                const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+                return {
+                    x: clientX - rect.left,
+                    y: clientY - rect.top
+                };
+            };
+
+            const startPosition = (e) => {
+                painting = true;
+                draw(e);
+            };
+            const finishedPosition = () => {
+                painting = false;
+                ctx.beginPath();
+            };
+            const draw = (e) => {
+                if (!painting) return;
+                e.preventDefault();
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = '#000';
+
+                const pos = getPos(e);
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+            };
+
+            canvas.addEventListener('mousedown', startPosition);
+            canvas.addEventListener('mouseup', finishedPosition);
+            canvas.addEventListener('mousemove', draw);
+
+            canvas.addEventListener('touchstart', startPosition, { passive: false });
+            canvas.addEventListener('touchend', finishedPosition);
+            canvas.addEventListener('touchmove', draw, { passive: false });
+        }
+
+        function clearSignature() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function setupPhotoValidation() {
+            document.getElementById('input-fotos').addEventListener('change', (e) => {
+                const files = Array.from(e.target.files);
+                if (files.length < 1 || files.length > 5) {
+                    alert("Por favor, selecione no mínimo 1 e no máximo 5 fotos.");
+                    e.target.value = "";
+                    selectedPhotos = [];
+                    document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
+                    return;
+                }
+                selectedPhotos = files;
+                document.getElementById('foto-contador').innerText = `${files.length} foto(s) selecionada(s).`;
+                checkFormValidity();
+            });
+
+            document.getElementById('input-video').addEventListener('change', (e) => {
+                selectedVideo = e.target.files[0] || null;
+            });
+        }
+
+        function checkFormValidity() {
+            // Valida se os campos obrigatórios estão preenchidos e se há entre 1 e 5 fotos
+            const cliente = document.getElementById('cliente').value.trim();
+            const chamado = document.getElementById('num_chamado').value.trim();
+            const fotosValidas = selectedPhotos.length >= 1 && selectedPhotos.length <= 5;
+            
+            if (cliente && chamado && fotosValidas) {
+                // Habilita validação geral para salvamento
+            }
+        }
+
+        // ================= SALVAR NO FIREBASE =================
+        async function salvarFicha() {
+            // Validar campos obrigatórios padrão
+            const form = document.getElementById('rac-form');
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+
+            if (selectedPhotos.length < 1 || selectedPhotos.length > 5) {
+                alert("É necessário anexar de 1 a 5 fotos para prosseguir.");
+                return;
+            }
+
+            const btnSalvar = document.getElementById('btn-salvar');
+            btnSalvar.innerText = "Salvando no Firebase...";
+            btnSalvar.disabled = true;
+
+            try {
+                // Formatação do Chamado com #
+                let rawChamado = document.getElementById('num_chamado').value.trim();
+                let numChamadoFormatado = rawChamado.startsWith('#') ? rawChamado : '#' + rawChamado.replace(/[^0-9]/g, '');
+
+                const utilizacaoEl = document.querySelector('input[name="utilizacao"]:checked');
+
+                const formData = {
+                    cliente: document.getElementById('cliente').value,
+                    num_chamado: numChamadoFormatado,
+                    data_abertura: document.getElementById('data_abertura').value,
+                    data_atendimento: document.getElementById('data_atendimento').value,
+                    horario_atendimento: document.getElementById('horario_atendimento').value,
+                    responsavel: document.getElementById('responsavel').value,
+                    contato_responsavel: document.getElementById('contato_responsavel').value,
+                    modelo_veiculos: document.getElementById('modelo_veiculos').value,
+                    num_patrimonio: document.getElementById('num_patrimonio').value,
+                    utilizacao: utilizacaoEl ? utilizacaoEl.value : '',
+                    solicitacao: document.getElementById('solicitacao').value,
+                    veiculos_saindo: document.getElementById('veiculos_saindo').value,
+                    veiculos_entrando: document.getElementById('veiculos_entrando').value,
+                    observacoes: document.getElementById('observacoes').value,
+                    colaborador_brmobility: document.getElementById('colaborador_brmobility').value,
+                    assinatura_responsavel: canvas.toDataURL('image/png'),
+                    createdAt: new Date().toISOString()
+                };
+
+                // Upload de Fotos
+                let photoUrls = [];
+                for (let i = 0; i < selectedPhotos.length; i++) {
+                    const file = selectedPhotos[i];
+                    const storageRef = storage.ref(`rac_media/${Date.now()}_foto_${i}_${file.name}`);
+                    const snapshot = await storageRef.put(file);
+                    const downloadUrl = await snapshot.ref.getDownloadURL();
+                    photoUrls.push(downloadUrl);
+                }
+                formData.photos = photoUrls;
+
+                // Upload de Vídeo Opcional
+                let videoUrl = "";
+                if (selectedVideo) {
+                    const videoRef = storage.ref(`rac_media/${Date.now()}_video_${selectedVideo.name}`);
+                    const videoSnapshot = await videoRef.put(selectedVideo);
+                    videoUrl = await videoSnapshot.ref.getDownloadURL();
+                }
+                formData.video = videoUrl;
+
+                // Salvar documento no Firestore
+                const docRef = await db.collection("fichas_rac").add(formData);
+                formData.id = docRef.id;
+                currentSavedData = formData;
+
+                alert("Ficha salva com sucesso no Firebase!");
+                document.getElementById('btn-whatsapp').style.display = 'inline-block';
+            } catch (error) {
+                console.error("Erro ao salvar: ", error);
+                alert("Erro ao salvar a ficha. Verifique o console ou a configuração do Firebase.");
+            } finally {
+                btnSalvar.innerText = "Salvar Ficha";
+                btnSalvar.disabled = false;
+            }
+        }
+
+        // ================= WHATSAPP OPERACIONAL =================
+        function enviarWhatsApp() {
+            if (!currentSavedData) {
+                alert("Por favor, salve a ficha primeiro antes de enviar.");
+                return;
+            }
+
+            const d = currentSavedData;
+            let textoRelatorio = `*RELATÓRIO DE ATENDIMENTO AO CLIENTE (RAC)*\n\n` +
+                `*INFORMAÇÕES*\n` +
+                `Cliente: ${d.cliente}\n` +
+                `Nº Chamado: ${d.num_chamado}\n` +
+                `Data de abertura: ${d.data_abertura}\n` +
+                `Data de atendimento: ${d.data_atendimento}\n` +
+                `Horário de atendimento: ${d.horario_atendimento}\n\n` +
+                `*ATENDIMENTO*\n` +
+                `Responsável no atendimento: ${d.responsavel}\n` +
+                `Contato do responsável: ${d.contato_responsavel}\n` +
+                `Modelo veículo(s): ${d.modelo_veiculos}\n` +
+                `Nº de Patrimônio: ${d.num_patrimonio}\n` +
+                `Utilização: ${d.utilizacao}\n` +
+                `Solicitação: ${d.solicitacao}\n\n` +
+                `*OBSERVAÇÕES*\n` +
+                `Veículo(s) saindo: ${d.veiculos_saindo}\n` +
+                `Veículo(s) entrando: ${d.veiculos_entrando}\n` +
+                `Observações: ${d.observacoes}\n\n` +
+                `Colaborador BRMobility: ${d.colaborador_brmobility}\n\n` +
+                `*Fotos anexadas:* \n` + d.photos.join('\n');
+
+            if (d.video) {
+                textoRelatorio += `\n*Vídeo anexado:* ${d.video}`;
+            }
+
+            const encodedText = encodeURIComponent(textoRelatorio);
+            window.open(`https://api.whatsapp.com/send?text=${encodedText}`, '_blank');
+        }
+
+        // ================= LISTAGEM DE FICHAS SALVAS =================
+        async function openSavedList() {
+            showScreen('saved-screen');
+            const container = document.getElementById('saved-list-container');
+            container.innerHTML = "<p>Buscando fichas no Firebase...</p>";
+
+            try {
+                const snapshot = await db.collection("fichas_rac").orderBy("createdAt", "desc").get();
+                if (snapshot.empty) {
+                    container.innerHTML = "<p>Nenhuma ficha salva encontrada.</p>";
+                    return;
+                }
+
+                let html = "";
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    html += `
+                        <div class="saved-item">
+                            <div>
+                                <strong>Chamado:</strong> ${data.num_chamado} | <strong>Cliente:</strong> ${data.cliente}<br>
+                                <small>Data: ${data.data_atendimento} - ${data.horario_atendimento}</small>
+                            </div>
+                            <button class="btn-action btn-save" style="padding: 5px 10px; font-size: 12px;" onclick='recarregarFicha(${JSON.stringify(data)})'>Visualizar/Enviar</button>
+                        </div>
+                    `;
+                });
+                container.innerHTML = html;
+            } catch (error) {
+                console.error("Erro ao carregar fichas:", error);
+                container.innerHTML = "<p>Erro ao carregar fichas salvas. Verifique sua conexão/Firebase.</p>";
+            }
+        }
+
+        function recarregarFicha(data) {
+            currentSavedData = data;
+            document.getElementById('cliente').value = data.cliente || '';
+            document.getElementById('num_chamado').value = data.num_chamado || '';
+            document.getElementById('data_abertura').value = data.data_abertura || '';
+            document.getElementById('data_atendimento').value = data.data_atendimento || '';
+            document.getElementById('horario_atendimento').value = data.horario_atendimento || '';
+            document.getElementById('responsavel').value = data.responsavel || '';
+            document.getElementById('contato_responsavel').value = data.contato_responsavel || '';
+            document.getElementById('modelo_veiculos').value = data.modelo_veiculos || '';
+            document.getElementById('num_patrimonio').value = data.num_patrimonio || '';
+            
+            if (data.utilizacao) {
+                const radio = document.querySelector(`input[name="utilizacao"][value="${data.utilizacao}"]`);
+                if (radio) radio.checked = true;
+            }
+            
+            document.getElementById('solicitacao').value = data.solicitacao || '';
+            document.getElementById('veiculos_saindo').value = data.veiculos_saindo || '';
+            document.getElementById('veiculos_entrando').value = data.veiculos_entrando || '';
+            document.getElementById('observacoes').value = data.observacoes || '';
+            document.getElementById('colaborador_brmobility').value = data.colaborador_brmobility || '';
+
+            if (data.assinatura_responsavel) {
+                const img = new Image();
+                img.onload = () => {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0);
+                };
+                img.src = data.assinatura_responsavel;
+            }
+
+            showScreen('form-screen');
+            document.getElementById('btn-whatsapp').style.display = 'inline-block';
+        }
+    </script>
+</body>
+</html>
