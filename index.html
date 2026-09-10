@@ -76,9 +76,6 @@
             padding-top: 10px;
             margin-top: 10px;
         }
-        .rac-logo {
-            max-height: 50px;
-        }
         h2.rac-title {
             text-align: center;
             font-size: 16px;
@@ -133,7 +130,7 @@
             margin-top: 4px;
         }
         
-        /* Assinatura */
+        /* Assinatura Corrigida e Alinhada */
         .signature-container {
             border: 1px dashed #777;
             background: #fafafa;
@@ -142,6 +139,7 @@
             margin-top: 5px;
         }
         canvas {
+            display: block;
             width: 100%;
             height: 100%;
             touch-action: none;
@@ -156,6 +154,7 @@
             border: none;
             cursor: pointer;
             padding: 2px 5px;
+            z-index: 10;
         }
 
         /* Mídia e Botões de Ação */
@@ -400,6 +399,11 @@
         function showScreen(screenId) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
             document.getElementById(screenId).classList.add('active');
+            
+            // Garante o redimensionamento perfeito do canvas ao alternar telas
+            if (screenId === 'form-screen' && canvas) {
+                setTimeout(resizeCanvas, 50);
+            }
         }
 
         function openNewForm() {
@@ -432,8 +436,8 @@
         function setupPhoneMask() {
             const phoneInput = document.getElementById('contato_responsavel');
             phoneInput.addEventListener('input', (e) => {
-                let value = e.target.value.replace(/\D/g, ''); // Remove tudo que não é dígito
-                if (value.length > 11) value = value.substring(0, 11); // Limita a 11 dígitos
+                let value = e.target.value.replace(/\D/g, ''); 
+                if (value.length > 11) value = value.substring(0, 11); 
 
                 if (value.length > 6) {
                     value = `(${value.substring(0, 2)}) ${value.substring(2, 7)}-${value.substring(7)}`;
@@ -446,15 +450,20 @@
             });
         }
 
+        // ================= ASSINATURA CORRIGIDA =================
+        function resizeCanvas() {
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+                canvas.width = rect.width;
+                canvas.height = rect.height;
+            }
+        }
+
         function initSignaturePad() {
             canvas = document.getElementById('sig-canvas');
             ctx = canvas.getContext('2d');
             
-            function resizeCanvas() {
-                const rect = canvas.getBoundingClientRect();
-                canvas.width = rect.width;
-                canvas.height = rect.height;
-            }
             window.addEventListener('resize', resizeCanvas);
             resizeCanvas();
 
@@ -499,7 +508,9 @@
         }
 
         function clearSignature() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (ctx && canvas) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
         }
 
         function setupMediaValidation() {
