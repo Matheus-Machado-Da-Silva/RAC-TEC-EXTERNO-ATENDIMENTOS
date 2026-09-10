@@ -529,15 +529,20 @@
             canvas = document.getElementById('sig-canvas');
             ctx = canvas.getContext('2d');
 
-            const getPos = (e) => {
-                const rect = canvas.getBoundingClientRect();
-                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-                const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-                return {
-                    x: clientX - rect.left,
-                    y: clientY - rect.top
-                };
+           const getPos = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+            
+            // Calcula a proporção real entre a resolução do canvas e o tamanho exibido na tela
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
             };
+        };
 
             const startPosition = (e) => {
                 painting = true;
