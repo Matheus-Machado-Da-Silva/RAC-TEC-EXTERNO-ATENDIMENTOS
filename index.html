@@ -27,13 +27,11 @@
             margin: 0 auto;
             background: #fff;
             padding: 20px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
             box-sizing: border-box;
         }
         .screen.active {
             display: block;
         }
-        /* Tela Inicial */
         #home-screen {
             text-align: center;
             padding: 50px 20px;
@@ -51,11 +49,6 @@
             border-radius: 5px;
             cursor: pointer;
         }
-        .home-btn:hover {
-            opacity: 0.9;
-        }
-
-        /* Documento RAC Layout Estrito */
         .rac-container {
             border: 1px solid var(--border-color);
             padding: 15px;
@@ -74,16 +67,14 @@
             border-top: 2px solid var(--border-color);
             padding-top: 10px;
             margin-top: 10px;
-        }
-        .rac-logo {
-            max-height: 50px;
+            flex-direction: column;
+            align-items: stretch;
         }
         h2.rac-title {
             text-align: center;
-            font-size: 18px;
+            font-size: 16px;
             margin: 10px 0;
             text-transform: uppercase;
-            letter-spacing: 1px;
         }
         .section-title {
             background-color: #ddd;
@@ -131,13 +122,29 @@
             margin-top: 4px;
         }
         
-        /* Assinatura */
-        .signature-container {
-            border: 1px dashed #777;
+        /* Modal Tela Cheia de Assinatura */
+        #signature-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: white;
+            z-index: 9999;
+            flex-direction: column;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+        #signature-modal.active {
+            display: flex;
+        }
+        .sig-canvas-box {
+            flex: 1;
+            border: 2px dashed #333;
             background: #fafafa;
             position: relative;
-            height: 100px;
-            margin-top: 5px;
+            margin-bottom: 10px;
         }
         canvas {
             width: 100%;
@@ -145,18 +152,21 @@
             touch-action: none;
             cursor: crosshair;
         }
-        .clear-sig {
-            position: absolute;
-            top: 2px;
-            right: 2px;
-            font-size: 10px;
-            background: #ccc;
-            border: none;
+        .sig-preview-box {
+            border: 1px solid #777;
+            height: 60px;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             cursor: pointer;
-            padding: 2px 5px;
+            margin-top: 5px;
+        }
+        .sig-preview-box img {
+            max-height: 50px;
+            max-width: 100%;
         }
 
-        /* Mídia e Botões de Ação */
         .media-section {
             margin-top: 15px;
             border-top: 1px dashed #ccc;
@@ -182,7 +192,6 @@
         .btn-whatsapp { background-color: #25d366; color: white; display: none; }
         .btn-back { background-color: #6c757d; color: white; }
         
-        /* Lista de Fichas Salvas */
         .saved-item {
             background: #fff;
             border: 1px solid #ccc;
@@ -199,7 +208,7 @@
 
     <!-- 1. TELA INICIAL -->
     <div id="home-screen" class="screen active">
-        <h1>BRMobility</h1>
+        <h2>BRMobility</h2>
         <p>Relatório de Atendimento ao Cliente (RAC)</p>
         <button class="home-btn" onclick="openNewForm()">Nova Ficha (RAC) de atendimento</button>
         <button class="home-btn" style="background-color: #555;" onclick="openSavedList()">Fichas (RAC) Salvas</button>
@@ -208,10 +217,8 @@
     <!-- 2. TELA DE NOVA FICHA (RAC) -->
     <div id="form-screen" class="screen">
         <div class="rac-container">
-            <!-- Cabeçalho Institucional Original -->
             <div class="rac-header">
-                <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" alt="Logo" class="rac-logo" id="logo-placeholder">
-                <h2 class="rac-title">RELATÓRIO DE ATENDIMENTO AO CLIENTE</h2>
+                <h2 class="rac-title" style="width:100%;">RELATÓRIO DE ATENDIMENTO AO CLIENTE</h2>
             </div>
 
             <form id="rac-form" onsubmit="return false;">
@@ -259,22 +266,14 @@
                         <label>Modelo veículo(s):</label>
                         <select id="modelo_veiculos" required>
                             <option value="">Selecione o modelo</option>
-                            <option value="i2">i2</option>
-                            <option value="X2">X2</option>
-                            <option value="i3">i3</option>
-                            <option value="X3">X3</option>
-                            <option value="S1">S1</option>
-                            <option value="S6">S6</option>
-                            <option value="S8">S8</option>
-                            <option value="R8">R8</option>
-                            <option value="BR8">BR8</option>
-                            <option value="S9">S9</option>
-                            <option value="S9X">S9X</option>
-                            <option value="H9">H9</option>
-                            <option value="H9X">H9X</option>
-                            <option value="S10">S10</option>
-                            <option value="S10X">S10X</option>
-                            <option value="VIP">VIP</option>
+                            <option value="i2">i2</option><option value="X2">X2</option>
+                            <option value="i3">i3</option><option value="X3">X3</option>
+                            <option value="S1">S1</option><option value="S6">S6</option>
+                            <option value="S8">S8</option><option value="R8">R8</option>
+                            <option value="BR8">BR8</option><option value="S9">S9</option>
+                            <option value="S9X">S9X</option><option value="H9">H9</option>
+                            <option value="H9X">H9X</option><option value="S10">S10</option>
+                            <option value="S10X">S10X</option><option value="VIP">VIP</option>
                             <option value="VIPS">VIPS</option>
                         </select>
                     </div>
@@ -316,7 +315,6 @@
                     </div>
                 </div>
 
-                <!-- Seção de Evidências (Fotos e Vídeo exigidos pelas regras) -->
                 <div class="media-section">
                     <div class="form-group">
                         <label>Fotos (Mínimo 1, Máximo 5 obrigatórias):</label>
@@ -330,15 +328,15 @@
                 </div>
 
                 <div class="rac-footer">
-                    <div class="form-group">
+                    <div class="form-group" style="margin-bottom: 10px;">
                         <label>Colaborador BRMobility</label>
                         <input type="text" id="colaborador_brmobility" value="Téc. Externo Brandon de Freitas" readonly>
                     </div>
                     <div class="form-group">
                         <label>Assinatura do Responsável</label>
-                        <div class="signature-container">
-                            <button type="button" class="clear-sig" onclick="clearSignature()">Limpar</button>
-                            <canvas id="sig-canvas"></canvas>
+                        <div class="sig-preview-box" onclick="openSignatureModal()">
+                            <span id="sig-placeholder-text" style="color: #666; font-size: 12px;">Toque aqui para assinar</span>
+                            <img id="sig-preview-img" style="display:none;" alt="Assinatura">
                         </div>
                     </div>
                 </div>
@@ -349,6 +347,18 @@
                 <button class="btn-action btn-save" id="btn-salvar" onclick="salvarFicha()">Salvar Ficha</button>
                 <button class="btn-action btn-whatsapp" id="btn-whatsapp" onclick="enviarWhatsApp()">WhatsApp Operacional</button>
             </div>
+        </div>
+    </div>
+
+    <!-- MODAL TELA CHEIA DE ASSINATURA -->
+    <div id="signature-modal">
+        <h3 style="margin: 0 0 10px 0; text-align: center;">Assine no espaço abaixo</h3>
+        <div class="sig-canvas-box">
+            <canvas id="sig-canvas"></canvas>
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: space-between;">
+            <button class="btn-action" style="background:#dc3545; color:white; flex:1;" onclick="clearSignatureModal()">Limpar</button>
+            <button class="btn-action btn-save" style="flex:1;" onclick="saveSignatureModal()">Concluir Assinatura</button>
         </div>
     </div>
 
@@ -364,40 +374,32 @@
     </div>
 
     <script>
-        // ================= CONFIGURAÇÃO DO FIREBASE =================
-const firebaseConfig = {
-    apiKey: "AIzaSyC133WKh3TTltm_47wu3HWoOgv5Vp2HnXQ",
-    authDomain: "rac-tec-externo-atendimentos.firebaseapp.com",
-    projectId: "rac-tec-externo-atendimentos",
-    storageBucket: "rac-tec-externo-atendimentos.firebasestorage.app",
-    messagingSenderId: "205160325304",
-    appId: "1:205160325304:web:4aea4c45ed2c17d454d44d",
-    measurementId: "G-NP08J9LGP1"
-};
+        const firebaseConfig = {
+            apiKey: "AIzaSyC133WKh3TTltm_47wu3HWoOgv5Vp2HnXQ",
+            authDomain: "rac-tec-externo-atendimentos.firebaseapp.com",
+            projectId: "rac-tec-externo-atendimentos",
+            storageBucket: "rac-tec-externo-atendimentos.firebasestorage.app",
+            messagingSenderId: "205160325304",
+            appId: "1:205160325304:web:4aea4c45ed2c17d454d44d",
+            measurementId: "G-NP08J9LGP1"
+        };
 
-if (!firebase.apps.length) {
-    firebase.initializeApp(firebaseConfig);
-}
-const db = firebase.firestore();
-const storage = firebase.storage();
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+        const storage = firebase.storage();
 
-        // Variáveis globais para controle
-        let canvas, ctx, painting = false;
+        let modalCanvas, modalCtx, painting = false;
         let selectedPhotos = [];
         let selectedVideo = null;
         let currentSavedData = null;
+        let signatureDataUrl = "";
 
         document.addEventListener("DOMContentLoaded", () => {
-            initSignaturePad();
+            initModalSignaturePad();
             setupAutoDateTime();
             setupPhotoValidation();
-            
-            // Monitorar preenchimento para liberar o botão de WhatsApp se salvo
-            const formInputs = document.querySelectorAll('#rac-form input, #rac-form select, #rac-form textarea');
-            formInputs.forEach(input => {
-                input.addEventListener('input', checkFormValidity);
-                input.addEventListener('change', checkFormValidity);
-            });
         });
 
         function showScreen(screenId) {
@@ -409,9 +411,12 @@ const storage = firebase.storage();
             document.getElementById('rac-form').reset();
             document.getElementById('colaborador_brmobility').value = "Téc. Externo Brandon de Freitas";
             setupAutoDateTime();
-            clearSignature();
+            clearSignatureModal();
             selectedPhotos = [];
             selectedVideo = null;
+            signatureDataUrl = "";
+            document.getElementById('sig-preview-img').style.display = 'none';
+            document.getElementById('sig-placeholder-text').style.display = 'block';
             document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
             document.getElementById('btn-whatsapp').style.display = 'none';
             showScreen('form-screen');
@@ -429,69 +434,76 @@ const storage = firebase.storage();
             document.getElementById('horario_atendimento').value = `${hours}:${minutes}`;
         }
 
-        // ================= ASSINATURA DIGITAL POR TOQUE =================
-        function initSignaturePad() {
-            canvas = document.getElementById('sig-canvas');
-            ctx = canvas.getContext('2d');
+        // TELA CHEIA DE ASSINATURA
+        function initModalSignaturePad() {
+            modalCanvas = document.getElementById('sig-canvas');
+            modalCtx = modalCanvas.getContext('2d');
             
-            function resizeCanvas() {
-                const rect = canvas.getBoundingClientRect();
-                canvas.width = rect.width;
-                canvas.height = rect.height;
+            function resizeModalCanvas() {
+                const rect = modalCanvas.getBoundingClientRect();
+                modalCanvas.width = rect.width;
+                modalCanvas.height = rect.height;
             }
-            window.addEventListener('resize', resizeCanvas);
-            resizeCanvas();
+            window.addEventListener('resize', resizeModalCanvas);
+            resizeModalCanvas();
 
             const getPos = (e) => {
-                const rect = canvas.getBoundingClientRect();
+                const rect = modalCanvas.getBoundingClientRect();
                 const clientX = e.clientX || (e.touches && e.touches[0].clientX);
                 const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-                return {
-                    x: clientX - rect.left,
-                    y: clientY - rect.top
-                };
+                return { x: clientX - rect.left, y: clientY - rect.top };
             };
 
-            const startPosition = (e) => {
-                painting = true;
-                draw(e);
-            };
-            const finishedPosition = () => {
-                painting = false;
-                ctx.beginPath();
-            };
+            const startPosition = (e) => { painting = true; draw(e); };
+            const finishedPosition = () => { painting = false; modalCtx.beginPath(); };
             const draw = (e) => {
                 if (!painting) return;
                 e.preventDefault();
-                ctx.lineWidth = 2;
-                ctx.lineCap = 'round';
-                ctx.strokeStyle = '#000';
-
+                modalCtx.lineWidth = 3;
+                modalCtx.lineCap = 'round';
+                modalCtx.strokeStyle = '#000';
                 const pos = getPos(e);
-                ctx.lineTo(pos.x, pos.y);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(pos.x, pos.y);
+                modalCtx.lineTo(pos.x, pos.y);
+                modalCtx.stroke();
+                modalCtx.beginPath();
+                modalCtx.moveTo(pos.x, pos.y);
             };
 
-            canvas.addEventListener('mousedown', startPosition);
-            canvas.addEventListener('mouseup', finishedPosition);
-            canvas.addEventListener('mousemove', draw);
-
-            canvas.addEventListener('touchstart', startPosition, { passive: false });
-            canvas.addEventListener('touchend', finishedPosition);
-            canvas.addEventListener('touchmove', draw, { passive: false });
+            modalCanvas.addEventListener('mousedown', startPosition);
+            modalCanvas.addEventListener('mouseup', finishedPosition);
+            modalCanvas.addEventListener('mousemove', draw);
+            modalCanvas.addEventListener('touchstart', startPosition, { passive: false });
+            modalCanvas.addEventListener('touchend', finishedPosition);
+            modalCanvas.addEventListener('touchmove', draw, { passive: false });
         }
 
-        function clearSignature() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        function openSignatureModal() {
+            document.getElementById('signature-modal').classList.add('active');
+            setTimeout(() => {
+                const rect = modalCanvas.getBoundingClientRect();
+                modalCanvas.width = rect.width;
+                modalCanvas.height = rect.height;
+            }, 200);
+        }
+
+        function clearSignatureModal() {
+            if(modalCtx) modalCtx.clearRect(0, 0, modalCanvas.width, modalCanvas.height);
+        }
+
+        function saveSignatureModal() {
+            signatureDataUrl = modalCanvas.toDataURL('image/png');
+            const previewImg = document.getElementById('sig-preview-img');
+            previewImg.src = signatureDataUrl;
+            previewImg.style.display = 'block';
+            document.getElementById('sig-placeholder-text').style.display = 'none';
+            document.getElementById('signature-modal').classList.remove('active');
         }
 
         function setupPhotoValidation() {
             document.getElementById('input-fotos').addEventListener('change', (e) => {
                 const files = Array.from(e.target.files);
                 if (files.length < 1 || files.length > 5) {
-                    alert("Por favor, selecione no mínimo 1 e no máximo 5 fotos.");
+                    alert("Selecione no mínimo 1 e no máximo 5 fotos.");
                     e.target.value = "";
                     selectedPhotos = [];
                     document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
@@ -499,7 +511,6 @@ const storage = firebase.storage();
                 }
                 selectedPhotos = files;
                 document.getElementById('foto-contador').innerText = `${files.length} foto(s) selecionada(s).`;
-                checkFormValidity();
             });
 
             document.getElementById('input-video').addEventListener('change', (e) => {
@@ -507,20 +518,8 @@ const storage = firebase.storage();
             });
         }
 
-        function checkFormValidity() {
-            // Valida se os campos obrigatórios estão preenchidos e se há entre 1 e 5 fotos
-            const cliente = document.getElementById('cliente').value.trim();
-            const chamado = document.getElementById('num_chamado').value.trim();
-            const fotosValidas = selectedPhotos.length >= 1 && selectedPhotos.length <= 5;
-            
-            if (cliente && chamado && fotosValidas) {
-                // Habilita validação geral para salvamento
-            }
-        }
-
-        // ================= SALVAR NO FIREBASE =================
+        // SALVAR NO FIREBASE CORRIGIDO
         async function salvarFicha() {
-            // Validar campos obrigatórios padrão
             const form = document.getElementById('rac-form');
             if (!form.checkValidity()) {
                 form.reportValidity();
@@ -528,19 +527,22 @@ const storage = firebase.storage();
             }
 
             if (selectedPhotos.length < 1 || selectedPhotos.length > 5) {
-                alert("É necessário anexar de 1 a 5 fotos para prosseguir.");
+                alert("É necessário anexar de 1 a 5 fotos.");
+                return;
+            }
+
+            if (!signatureDataUrl) {
+                alert("Por favor, colete a assinatura do responsável.");
                 return;
             }
 
             const btnSalvar = document.getElementById('btn-salvar');
-            btnSalvar.innerText = "Salvando no Firebase...";
+            btnSalvar.innerText = "Salvando...";
             btnSalvar.disabled = true;
 
             try {
-                // Formatação do Chamado com #
                 let rawChamado = document.getElementById('num_chamado').value.trim();
                 let numChamadoFormatado = rawChamado.startsWith('#') ? rawChamado : '#' + rawChamado.replace(/[^0-9]/g, '');
-
                 const utilizacaoEl = document.querySelector('input[name="utilizacao"]:checked');
 
                 const formData = {
@@ -559,11 +561,10 @@ const storage = firebase.storage();
                     veiculos_entrando: document.getElementById('veiculos_entrando').value,
                     observacoes: document.getElementById('observacoes').value,
                     colaborador_brmobility: document.getElementById('colaborador_brmobility').value,
-                    assinatura_responsavel: canvas.toDataURL('image/png'),
+                    assinatura_responsavel: signatureDataUrl,
                     createdAt: new Date().toISOString()
                 };
 
-                // Upload de Fotos
                 let photoUrls = [];
                 for (let i = 0; i < selectedPhotos.length; i++) {
                     const file = selectedPhotos[i];
@@ -574,7 +575,6 @@ const storage = firebase.storage();
                 }
                 formData.photos = photoUrls;
 
-                // Upload de Vídeo Opcional
                 let videoUrl = "";
                 if (selectedVideo) {
                     const videoRef = storage.ref(`rac_media/${Date.now()}_video_${selectedVideo.name}`);
@@ -583,26 +583,24 @@ const storage = firebase.storage();
                 }
                 formData.video = videoUrl;
 
-                // Salvar documento no Firestore
                 const docRef = await db.collection("fichas_rac").add(formData);
                 formData.id = docRef.id;
                 currentSavedData = formData;
 
-                alert("Ficha salva com sucesso no Firebase!");
+                alert("Ficha salva com sucesso!");
                 document.getElementById('btn-whatsapp').style.display = 'inline-block';
             } catch (error) {
-                console.error("Erro ao salvar: ", error);
-                alert("Erro ao salvar a ficha. Verifique o console ou a configuração do Firebase.");
+                console.error("Erro ao salvar:", error);
+                alert("Erro ao salvar. Verifique se as Regras do Firestore/Storage estão públicas no painel do Firebase.");
             } finally {
                 btnSalvar.innerText = "Salvar Ficha";
                 btnSalvar.disabled = false;
             }
         }
 
-        // ================= WHATSAPP OPERACIONAL =================
         function enviarWhatsApp() {
             if (!currentSavedData) {
-                alert("Por favor, salve a ficha primeiro antes de enviar.");
+                alert("Salve a ficha primeiro.");
                 return;
             }
 
@@ -615,37 +613,32 @@ const storage = firebase.storage();
                 `Data de atendimento: ${d.data_atendimento}\n` +
                 `Horário de atendimento: ${d.horario_atendimento}\n\n` +
                 `*ATENDIMENTO*\n` +
-                `Responsável no atendimento: ${d.responsavel}\n` +
-                `Contato do responsável: ${d.contato_responsavel}\n` +
-                `Modelo veículo(s): ${d.modelo_veiculos}\n` +
-                `Nº de Patrimônio: ${d.num_patrimonio}\n` +
+                `Responsável: ${d.responsavel}\n` +
+                `Contato: ${d.contato_responsavel}\n` +
+                `Modelo veículo: ${d.modelo_veiculos}\n` +
+                `Nº Patrimônio: ${d.num_patrimonio}\n` +
                 `Utilização: ${d.utilizacao}\n` +
                 `Solicitação: ${d.solicitacao}\n\n` +
                 `*OBSERVAÇÕES*\n` +
-                `Veículo(s) saindo: ${d.veiculos_saindo}\n` +
-                `Veículo(s) entrando: ${d.veiculos_entrando}\n` +
-                `Observações: ${d.observacoes}\n\n` +
-                `Colaborador BRMobility: ${d.colaborador_brmobility}\n\n` +
-                `*Fotos anexadas:* \n` + d.photos.join('\n');
+                `Saindo: ${d.veiculos_saindo} | Entrando: ${d.veiculos_entrando}\n` +
+                `Obs: ${d.observacoes}\n\n` +
+                `Colaborador: ${d.colaborador_brmobility}\n\n` +
+                `*Fotos:* \n` + d.photos.join('\n');
 
-            if (d.video) {
-                textoRelatorio += `\n*Vídeo anexado:* ${d.video}`;
-            }
+            if (d.video) textoRelatorio += `\n*Vídeo:* ${d.video}`;
 
-            const encodedText = encodeURIComponent(textoRelatorio);
-            window.open(`https://api.whatsapp.com/send?text=${encodedText}`, '_blank');
+            window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(textoRelatorio)}`, '_blank');
         }
 
-        // ================= LISTAGEM DE FICHAS SALVAS =================
         async function openSavedList() {
             showScreen('saved-screen');
             const container = document.getElementById('saved-list-container');
-            container.innerHTML = "<p>Buscando fichas no Firebase...</p>";
+            container.innerHTML = "<p>Buscando fichas...</p>";
 
             try {
                 const snapshot = await db.collection("fichas_rac").orderBy("createdAt", "desc").get();
                 if (snapshot.empty) {
-                    container.innerHTML = "<p>Nenhuma ficha salva encontrada.</p>";
+                    container.innerHTML = "<p>Nenhuma ficha salva.</p>";
                     return;
                 }
 
@@ -658,14 +651,13 @@ const storage = firebase.storage();
                                 <strong>Chamado:</strong> ${data.num_chamado} | <strong>Cliente:</strong> ${data.cliente}<br>
                                 <small>Data: ${data.data_atendimento} - ${data.horario_atendimento}</small>
                             </div>
-                            <button class="btn-action btn-save" style="padding: 5px 10px; font-size: 12px;" onclick='recarregarFicha(${JSON.stringify(data)})'>Visualizar/Enviar</button>
+                            <button class="btn-action btn-save" style="padding: 5px 10px; font-size: 12px;" onclick='recarregarFicha(${JSON.stringify(data)})'>Visualizar</button>
                         </div>
                     `;
                 });
                 container.innerHTML = html;
             } catch (error) {
-                console.error("Erro ao carregar fichas:", error);
-                container.innerHTML = "<p>Erro ao carregar fichas salvas. Verifique sua conexão/Firebase.</p>";
+                container.innerHTML = "<p>Erro ao carregar fichas do Firebase.</p>";
             }
         }
 
@@ -693,12 +685,11 @@ const storage = firebase.storage();
             document.getElementById('colaborador_brmobility').value = data.colaborador_brmobility || '';
 
             if (data.assinatura_responsavel) {
-                const img = new Image();
-                img.onload = () => {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.drawImage(img, 0, 0);
-                };
-                img.src = data.assinatura_responsavel;
+                signatureDataUrl = data.assinatura_responsavel;
+                const previewImg = document.getElementById('sig-preview-img');
+                previewImg.src = signatureDataUrl;
+                previewImg.style.display = 'block';
+                document.getElementById('sig-placeholder-text').style.display = 'none';
             }
 
             showScreen('form-screen');
