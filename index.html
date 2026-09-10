@@ -7,8 +7,6 @@
     <!-- Firebase SDK (Firestore) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-    <!-- html2pdf para gerar o PDF idêntico ao documento original -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     
     <style>
         :root {
@@ -76,9 +74,6 @@
             padding-top: 10px;
             margin-top: 10px;
         }
-        .rac-logo {
-            max-height: 50px;
-        }
         h2.rac-title {
             text-align: center;
             font-size: 16px;
@@ -87,7 +82,9 @@
             letter-spacing: 1px;
         }
         .section-title {
-            background-color: #ddd;
+            background-color: #ddd !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
             font-weight: bold;
             padding: 4px 8px;
             margin-top: 10px;
@@ -133,13 +130,68 @@
             margin-top: 4px;
         }
         
-        /* Assinatura */
-        .signature-container {
-            border: 1px dashed #777;
-            background: #fafafa;
-            position: relative;
-            height: 90px;
+        /* Botão de Assinatura no Formulário */
+        .btn-open-sig {
+            background-color: #f8f9fa;
+            border: 1px dashed #00778f;
+            color: #00778f;
+            padding: 10px;
+            text-align: center;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
             margin-top: 5px;
+        }
+        .btn-open-sig:hover {
+            background-color: #e2f0f3;
+        }
+        #sig-preview-container {
+            margin-top: 5px;
+            text-align: center;
+            border: 1px solid #ddd;
+            background: #fafafa;
+            padding: 5px;
+            min-height: 45px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #sig-preview-container img {
+            max-height: 50px;
+            max-width: 100%;
+        }
+
+        /* Modal / Tela de Assinatura em Tela Cheia */
+        #signature-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+        .signature-box {
+            background: #fff;
+            width: 100%;
+            max-width: 600px;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        .signature-canvas-wrapper {
+            border: 2px dashed #777;
+            background: #fff;
+            height: 250px;
+            margin: 15px 0;
+            position: relative;
         }
         canvas {
             width: 100%;
@@ -147,23 +199,13 @@
             touch-action: none;
             cursor: crosshair;
         }
-        .clear-sig {
-            position: absolute;
-            top: 2px;
-            right: 2px;
-            font-size: 10px;
-            background: #ccc;
-            border: none;
-            cursor: pointer;
-            padding: 2px 5px;
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: space-between;
         }
 
-        /* Mídia e Botões de Ação */
-        .media-section {
-            margin-top: 15px;
-            border-top: 1px dashed #ccc;
-            padding-top: 10px;
-        }
+        /* Botões de Ação */
         .action-bar {
             margin-top: 20px;
             text-align: center;
@@ -196,9 +238,46 @@
             justify-content: space-between;
             align-items: center;
         }
+
+        /* CONFIGURAÇÃO EXATA PARA IMPRESSÃO / PDF */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #pdf-content, #pdf-content * {
+                visibility: visible;
+            }
+            #pdf-content {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                border: none;
+                padding: 0;
+            }
+            .btn-open-sig {
+                display: none;
+            }
+        }
     </style>
 </head>
 <body>
+
+    <!-- MODAL DE ASSINATURA -->
+    <div id="signature-modal">
+        <div class="signature-box">
+            <h3 style="margin-top:0; color:#00778f;">Assinatura do Responsável</h3>
+            <p style="font-size:12px; color:#666; margin:5px 0;">Faça a assinatura no quadro abaixo:</p>
+            <div class="signature-canvas-wrapper">
+                <canvas id="sig-canvas"></canvas>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn-action" style="background-color: #6c757d; color: white;" onclick="closeSignatureModal()">Cancelar</button>
+                <button type="button" class="btn-action" style="background-color: #ffc107; color: black;" onclick="clearSignatureCanvas()">Limpar</button>
+                <button type="button" class="btn-action btn-save" onclick="saveSignatureCanvas()">Confirmar Assinatura</button>
+            </div>
+        </div>
+    </div>
 
     <!-- 1. TELA INICIAL -->
     <div id="home-screen" class="screen active">
@@ -210,7 +289,6 @@
 
     <!-- 2. TELA DE NOVA FICHA (RAC) -->
     <div id="form-screen" class="screen">
-        <!-- Elemento encapsulado para exportação exata em PDF -->
         <div id="pdf-content" class="rac-container">
             <div class="rac-header">
                 <h3 style="margin: 0; color: #00778f; font-size: 16px;">BRMobility</h3>
@@ -326,27 +404,13 @@
                     </div>
                     <div class="form-group">
                         <label>Assinatura do Responsável</label>
-                        <div class="signature-container">
-                            <button type="button" class="clear-sig" onclick="clearSignature()">Limpar</button>
-                            <canvas id="sig-canvas"></canvas>
+                        <div class="btn-open-sig" onclick="openSignatureModal()">Toque para Assinar</div>
+                        <div id="sig-preview-container">
+                            <span style="color: #888; font-size: 11px;" id="sig-status-text">Nenhuma assinatura</span>
                         </div>
                     </div>
                 </div>
             </form>
-        </div>
-
-        <!-- Campos de Mídia (Fora do PDF para manter o layout idêntico ao documento original) -->
-        <div class="media-section">
-            <div class="form-group">
-                <label>Fotos (Mínimo 1, Máximo 5 obrigatórias):</label>
-                <input type="file" id="input-fotos" accept="image/*" multiple capture="environment">
-                <small id="foto-contador" style="color: #666; margin-top: 3px;">Nenhuma foto selecionada</small>
-            </div>
-            <div class="form-group" style="margin-top: 10px;">
-                <label>Vídeo (Opcional):</label>
-                <input type="file" id="input-video" accept="video/*" capture="environment">
-                <small id="video-contador" style="color: #666; margin-top: 3px;">Nenhum vídeo selecionado</small>
-            </div>
         </div>
 
         <div class="action-bar">
@@ -361,7 +425,7 @@
     <div id="saved-screen" class="screen">
         <h2>Fichas (RAC) Salvas</h2>
         <div id="saved-list-container">
-            <p>Carregando fichas...</p>
+            <p>Buscando fichas...</p>
         </div>
         <div class="action-bar" style="margin-top: 20px;">
             <button class="btn-action btn-back" onclick="showScreen('home-screen')">Voltar</button>
@@ -369,7 +433,6 @@
     </div>
 
     <script>
-        // ================= CONFIGURAÇÃO DO FIREBASE =================
         const firebaseConfig = {
             apiKey: "AIzaSyC133WKh3TTltm_47wu3HWoOgv5Vp2HnXQ",
             authDomain: "rac-tec-externo-atendimentos.firebaseapp.com",
@@ -386,14 +449,12 @@
         const db = firebase.firestore();
 
         let canvas, ctx, painting = false;
-        let selectedPhotos = [];
-        let selectedVideoName = "";
+        let currentSignatureData = "";
         let currentSavedData = null;
 
         document.addEventListener("DOMContentLoaded", () => {
             initSignaturePad();
             setupAutoDateTime();
-            setupMediaValidation();
         });
 
         function showScreen(screenId) {
@@ -405,11 +466,8 @@
             document.getElementById('rac-form').reset();
             document.getElementById('colaborador_brmobility').value = "Téc. Externo Brandon de Freitas";
             setupAutoDateTime();
-            clearSignature();
-            selectedPhotos = [];
-            selectedVideoName = "";
-            document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
-            document.getElementById('video-contador').innerText = "Nenhum vídeo selecionado";
+            clearSignatureData();
+            currentSavedData = null;
             document.getElementById('btn-pdf').style.display = 'none';
             document.getElementById('btn-whatsapp').style.display = 'none';
             showScreen('form-screen');
@@ -479,34 +537,49 @@
             canvas.addEventListener('touchmove', draw, { passive: false });
         }
 
-        function clearSignature() {
+        function openSignatureModal() {
+            document.getElementById('signature-modal').style.display = 'flex';
+            // Ajustar o tamanho do canvas ao abrir a modal
+            setTimeout(() => {
+                const rect = canvas.getBoundingClientRect();
+                canvas.width = rect.width;
+                canvas.height = rect.height;
+                if (currentSignatureData) {
+                    const img = new Image();
+                    img.onload = () => ctx.drawImage(img, 0, 0);
+                    img.src = currentSignatureData;
+                }
+            }, 50);
+        }
+
+        function closeSignatureModal() {
+            document.getElementById('signature-modal').style.display = 'none';
+        }
+
+        function clearSignatureCanvas() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
 
-        function setupMediaValidation() {
-            document.getElementById('input-fotos').addEventListener('change', (e) => {
-                const files = Array.from(e.target.files);
-                if (files.length < 1 || files.length > 5) {
-                    alert("Por favor, selecione no mínimo 1 e no máximo 5 fotos.");
-                    e.target.value = "";
-                    selectedPhotos = [];
-                    document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
-                    return;
-                }
-                selectedPhotos = files;
-                document.getElementById('foto-contador').innerText = `${files.length} foto(s) anexada(s).`;
-            });
+        function saveSignatureCanvas() {
+            // Verificar se o canvas está em branco
+            const blank = document.createElement('canvas');
+            blank.width = canvas.width;
+            blank.height = canvas.height;
+            if (canvas.toDataURL() === blank.toDataURL()) {
+                alert("Por favor, faça a assinatura antes de confirmar.");
+                return;
+            }
 
-            document.getElementById('input-video').addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    selectedVideoName = file.name;
-                    document.getElementById('video-contador').innerText = `Vídeo anexado: ${file.name}`;
-                } else {
-                    selectedVideoName = "";
-                    document.getElementById('video-contador').innerText = "Nenhum vídeo selecionado";
-                }
-            });
+            currentSignatureData = canvas.toDataURL('image/png');
+            const previewContainer = document.getElementById('sig-preview-container');
+            previewContainer.innerHTML = `<img src="${currentSignatureData}" alt="Assinatura">`;
+            closeSignatureModal();
+        }
+
+        function clearSignatureData() {
+            currentSignatureData = "";
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            document.getElementById('sig-preview-container').innerHTML = `<span style="color: #888; font-size: 11px;" id="sig-status-text">Nenhuma assinatura</span>`;
         }
 
         async function salvarFicha() {
@@ -516,8 +589,9 @@
                 return;
             }
 
-            if (selectedPhotos.length < 1 || selectedPhotos.length > 5) {
-                alert("É obrigatório anexar de 1 a 5 fotos para prosseguir.");
+            if (!currentSignatureData) {
+                alert("A assinatura do responsável é obrigatória.");
+                openSignatureModal();
                 return;
             }
 
@@ -547,9 +621,7 @@
                     veiculos_entrando: document.getElementById('veiculos_entrando').value,
                     observacoes: document.getElementById('observacoes').value,
                     colaborador_brmobility: document.getElementById('colaborador_brmobility').value,
-                    assinatura_responsavel: canvas.toDataURL('image/png'),
-                    qtd_fotos: selectedPhotos.length,
-                    tem_video: selectedVideoName ? "Sim" : "Não",
+                    assinatura_responsavel: currentSignatureData,
                     createdAt: new Date().toISOString()
                 };
 
@@ -569,18 +641,8 @@
             }
         }
 
-        // ================= GERAR PDF DA FICHA =================
         function gerarPDF() {
-            const element = document.getElementById('pdf-content');
-            const chamadoNum = document.getElementById('num_chamado').value || 'atendimento';
-            const opt = {
-                margin:       10,
-                filename:     `RAC_${chamadoNum}.pdf`,
-                image:        { type: 'jpeg', quality: 0.98 },
-                html2canvas:  { scale: 2, useCORS: true },
-                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-            };
-            html2pdf().from(element).set(opt).save();
+            window.print();
         }
 
         function enviarWhatsApp() {
@@ -608,10 +670,7 @@
                 `Veículo(s) saindo: ${d.veiculos_saindo}\n` +
                 `Veículo(s) entrando: ${d.veiculos_entrando}\n` +
                 `Observações: ${d.observacoes}\n\n` +
-                `Colaborador BRMobility: ${d.colaborador_brmobility}\n\n` +
-                `*Evidências do Atendimento:*\n` +
-                `- Fotos anexadas: ${d.qtd_fotos} foto(s)\n` +
-                `- Vídeo anexado: ${d.tem_video}`;
+                `Colaborador BRMobility: ${d.colaborador_brmobility}`;
 
             const encodedText = encodeURIComponent(textoRelatorio);
             window.open(`https://api.whatsapp.com/send?text=${encodedText}`, '_blank');
@@ -673,12 +732,10 @@
             document.getElementById('colaborador_brmobility').value = data.colaborador_brmobility || '';
 
             if (data.assinatura_responsavel) {
-                const img = new Image();
-                img.onload = () => {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.drawImage(img, 0, 0);
-                };
-                img.src = data.assinatura_responsavel;
+                currentSignatureData = data.assinatura_responsavel;
+                document.getElementById('sig-preview-container').innerHTML = `<img src="${currentSignatureData}" alt="Assinatura">`;
+            } else {
+                clearSignatureData();
             }
 
             showScreen('form-screen');
