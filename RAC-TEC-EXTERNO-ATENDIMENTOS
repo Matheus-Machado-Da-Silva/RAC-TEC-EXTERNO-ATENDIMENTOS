@@ -365,21 +365,21 @@
 
     <script>
         // ================= CONFIGURAÇÃO DO FIREBASE =================
-        // ATENÇÃO: Substitua os valores abaixo pelas credenciais reais do seu projeto Firebase
-        const firebaseConfig = {
-            apiKey: "SUA_API_KEY",
-            authDomain: "SEU_AUTH_DOMAIN",
-            projectId: "SEU_PROJECT_ID",
-            storageBucket: "SEU_STORAGE_BUCKET",
-            messagingSenderId: "SEU_MESSAGING_SENDER_ID",
-            appId: "SEU_APP_ID"
-        };
+const firebaseConfig = {
+    apiKey: "AIzaSyC133WKh3TTltm_47wu3HWoOgv5Vp2HnXQ",
+    authDomain: "rac-tec-externo-atendimentos.firebaseapp.com",
+    projectId: "rac-tec-externo-atendimentos",
+    storageBucket: "rac-tec-externo-atendimentos.firebasestorage.app",
+    messagingSenderId: "205160325304",
+    appId: "1:205160325304:web:4aea4c45ed2c17d454d44d",
+    measurementId: "G-NP08J9LGP1"
+};
 
-        if (!firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
-        }
-        const db = firebase.firestore();
-        const storage = firebase.storage();
+if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+}
+const db = firebase.firestore();
+const storage = firebase.storage();
 
         // Variáveis globais para controle
         let canvas, ctx, painting = false;
