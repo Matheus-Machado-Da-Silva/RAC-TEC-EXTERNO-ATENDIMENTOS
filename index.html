@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>RAC - Relatório de Atendimento ao Cliente</title>
     <!-- Firebase SDK (Firestore) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -21,6 +21,14 @@
             padding: 10px;
             background-color: #f4f4f4;
             color: #000;
+        }
+        /* Trava o scroll do body quando o modal de assinatura está aberto,
+           evitando que a barra de endereço do navegador mude de tamanho
+           no meio da assinatura e desalinhe o canvas */
+        body.modal-open {
+            overflow: hidden;
+            position: fixed;
+            width: 100%;
         }
         .screen {
             display: none;
@@ -161,13 +169,20 @@
             top: 0;
             left: 0;
             width: 100vw;
+            /* fallback para navegadores sem suporte a dvh; a altura real
+               é recalculada via JS em ajustarAlturaModal() para acompanhar
+               a barra de endereço do navegador mobile */
             height: 100vh;
+            height: 100dvh;
             background: rgba(0, 0, 0, 0.85);
             z-index: 9999;
             flex-direction: column;
             justify-content: space-between;
-            padding: 20px;
+            padding: 15px;
+            padding-top: max(15px, env(safe-area-inset-top));
+            padding-bottom: max(15px, env(safe-area-inset-bottom));
             box-sizing: border-box;
+            overflow: hidden;
         }
         #signature-modal.active {
             display: flex;
@@ -177,13 +192,15 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-shrink: 0;
         }
         .modal-header h3 {
             margin: 0;
             font-size: 18px;
         }
         .modal-canvas-wrapper {
-            flex: 1;
+            flex: 1 1 auto;
+            min-height: 0; /* evita que o canvas "empurre" o rodapé para fora da tela */
             background: white;
             margin: 15px 0;
             border-radius: 8px;
@@ -202,6 +219,7 @@
             display: flex;
             gap: 15px;
             justify-content: flex-end;
+            flex-shrink: 0;
         }
         .btn-modal {
             padding: 12px 25px;
@@ -241,6 +259,7 @@
         .btn-pdf { background-color: #00778f; color: white; display: none; }
         .btn-whatsapp { background-color: #25d366; color: white; display: none; }
         .btn-back { background-color: #6c757d; color: white; }
+        .btn-delete { background-color: #dc3545; color: white; }
         
         /* Lista de Fichas Salvas */
         .saved-item {
@@ -252,6 +271,13 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .saved-item-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
         }
     </style>
 </head>
@@ -459,10 +485,17 @@
         }
         const db = firebase.firestore();
 
+        // Senha exigida para excluir uma ficha já salva
+        const SENHA_EXCLUSAO = "BRM@2026";
+
         let canvas, ctx, painting = false;
+        let hasSignature = false;
         let selectedPhotos = [];
         let selectedVideoName = "";
         let currentSavedData = null;
+        // Cache das fichas carregadas do Firestore (usado por recarregarFicha/excluirFicha
+        // via índice, evitando problemas de escaping ao colocar JSON dentro de onclick)
+        let savedFichasCache = [];
 
         document.addEventListener("DOMContentLoaded", () => {
             initSignaturePad();
@@ -480,7 +513,7 @@
             document.getElementById('rac-form').reset();
             document.getElementById('colaborador_brmobility').value = "Téc. Externo Brandon de Freitas";
             setupAutoDateTime();
-            clearModalSignature();
+            hasSignature = false;
             document.getElementById('assinatura_base64').value = "";
             document.getElementById('sig-image-preview').style.display = 'none';
             document.getElementById('sig-placeholder').style.display = 'block';
@@ -529,24 +562,33 @@
             canvas = document.getElementById('sig-canvas');
             ctx = canvas.getContext('2d');
 
-           const getPos = (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-            
-            // Calcula a proporção real entre a resolução do canvas e o tamanho exibido na tela
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
+            const getPos = (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const touch = e.touches && e.touches[0];
+                const clientX = touch ? touch.clientX : e.clientX;
+                const clientY = touch ? touch.clientY : e.clientY;
 
-            return {
-                x: (clientX - rect.left) * scaleX,
-                y: (clientY - rect.top) * scaleY
+                // Calcula a proporção real entre a resolução do canvas (em pixels)
+                // e o tamanho exibido na tela (em CSS px), para mapear o toque
+                // corretamente mesmo em telas de alta densidade (devicePixelRatio)
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+
+                return {
+                    x: (clientX - rect.left) * scaleX,
+                    y: (clientY - rect.top) * scaleY
+                };
             };
-        };
 
             const startPosition = (e) => {
+                e.preventDefault();
                 painting = true;
-                draw(e);
+                hasSignature = true;
+                const pos = getPos(e);
+                // Corrige o bug do primeiro traço: sem isto, o primeiro lineTo()
+                // partia do canto (0,0) do canvas em vez do ponto tocado
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
             };
             const finishedPosition = () => {
                 painting = false;
@@ -555,8 +597,8 @@
             const draw = (e) => {
                 if (!painting) return;
                 e.preventDefault();
-                ctx.lineWidth = 3;
                 ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
                 ctx.strokeStyle = '#000';
 
                 const pos = getPos(e);
@@ -568,35 +610,106 @@
 
             canvas.addEventListener('mousedown', startPosition);
             canvas.addEventListener('mouseup', finishedPosition);
+            canvas.addEventListener('mouseleave', finishedPosition);
             canvas.addEventListener('mousemove', draw);
             canvas.addEventListener('touchstart', startPosition, { passive: false });
             canvas.addEventListener('touchend', finishedPosition);
+            canvas.addEventListener('touchcancel', finishedPosition);
             canvas.addEventListener('touchmove', draw, { passive: false });
+        }
+
+        // Retorna a altura real visível do navegador (descontando a barra de
+        // endereço/teclado), usando visualViewport quando disponível. Isso é
+        // o que resolve o "não ajusta na tela do celular": 100vh no mobile
+        // costuma incluir a área coberta pela barra de endereço.
+        function getAlturaVisivel() {
+            if (window.visualViewport) return window.visualViewport.height;
+            return window.innerHeight;
+        }
+
+        function ajustarAlturaModal() {
+            const modal = document.getElementById('signature-modal');
+            modal.style.height = getAlturaVisivel() + 'px';
+        }
+
+        // Redimensiona o buffer real do canvas para bater exatamente com o
+        // tamanho exibido em tela, usando devicePixelRatio para um traço
+        // nítido (sem isso a imagem final ficava borrada/pequena).
+        function resizeSignatureCanvas(preservarDesenho) {
+            if (!canvas) return;
+            let imagemSalva = null;
+            if (preservarDesenho && canvas.width > 0 && canvas.height > 0) {
+                try { imagemSalva = canvas.toDataURL('image/png'); } catch (e) { imagemSalva = null; }
+            }
+
+            const rect = canvas.parentElement.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+
+            canvas.width = Math.max(1, Math.round(rect.width * dpr));
+            canvas.height = Math.max(1, Math.round(rect.height * dpr));
+
+            ctx = canvas.getContext('2d');
+            ctx.lineWidth = 3 * dpr;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = '#000';
+
+            if (imagemSalva) {
+                const img = new Image();
+                img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                img.src = imagemSalva;
+            }
+        }
+
+        function onViewportChange() {
+            const modal = document.getElementById('signature-modal');
+            if (!modal.classList.contains('active')) return;
+            ajustarAlturaModal();
+            resizeSignatureCanvas(true);
+        }
+
+        window.addEventListener('resize', onViewportChange);
+        window.addEventListener('orientationchange', onViewportChange);
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', onViewportChange);
         }
 
         function openSignatureModal() {
             const modal = document.getElementById('signature-modal');
+            document.body.classList.add('modal-open');
             modal.classList.add('active');
-            
-            // Redimensiona o canvas para ocupar perfeitamente o espaço do modal aberto
-            setTimeout(() => {
-                const rect = canvas.parentElement.getBoundingClientRect();
-                canvas.width = rect.width;
-                canvas.height = rect.height;
-            }, 50);
+            ajustarAlturaModal();
+
+            // Espera o navegador aplicar o layout (barra de endereço já
+            // recolhida/expandida) antes de medir o wrapper do canvas
+            requestAnimationFrame(() => {
+                setTimeout(() => {
+                    ajustarAlturaModal();
+                    // Preserva o desenho já existente caso o usuário reabra
+                    // o modal para continuar/ajustar a assinatura
+                    resizeSignatureCanvas(hasSignature);
+                }, 60);
+            });
         }
 
         function closeSignatureModal() {
             document.getElementById('signature-modal').classList.remove('active');
+            document.body.classList.remove('modal-open');
         }
 
         function clearModalSignature() {
             if (ctx && canvas) {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
             }
+            hasSignature = false;
         }
 
         function saveSignatureModal() {
+            if (!hasSignature) {
+                alert("Por favor, desenhe a assinatura antes de confirmar.");
+                return;
+            }
+
             const dataURL = canvas.toDataURL('image/png');
             document.getElementById('assinatura_base64').value = dataURL;
 
@@ -754,6 +867,8 @@
 
             try {
                 const snapshot = await db.collection("fichas_rac").orderBy("createdAt", "desc").get();
+                savedFichasCache = [];
+
                 if (snapshot.empty) {
                     container.innerHTML = "<p>Nenhuma ficha salva encontrada.</p>";
                     return;
@@ -762,13 +877,19 @@
                 let html = "";
                 snapshot.forEach(doc => {
                     const data = doc.data();
+                    const index = savedFichasCache.length;
+                    savedFichasCache.push({ id: doc.id, data: data });
+
                     html += `
                         <div class="saved-item">
                             <div>
-                                <strong>Chamado:</strong> ${data.num_chamado} | <strong>Cliente:</strong> ${data.cliente}<br>
-                                <small>Data: ${data.data_atendimento} - ${data.horario_atendimento}</small>
+                                <strong>Chamado:</strong> ${escapeHtml(data.num_chamado)} | <strong>Cliente:</strong> ${escapeHtml(data.cliente)}<br>
+                                <small>Data: ${escapeHtml(data.data_atendimento)} - ${escapeHtml(data.horario_atendimento)}</small>
                             </div>
-                            <button class="btn-action btn-save" style="padding: 5px 10px; font-size: 12px;" onclick='recarregarFicha(${JSON.stringify(data)})'>Visualizar/Baixar</button>
+                            <div class="saved-item-actions">
+                                <button class="btn-action btn-save" style="padding: 5px 10px; font-size: 12px;" onclick="recarregarFicha(${index})">Visualizar/Baixar</button>
+                                <button class="btn-action btn-delete" style="padding: 5px 10px; font-size: 12px;" onclick="excluirFicha(${index})">Excluir</button>
+                            </div>
                         </div>
                     `;
                 });
@@ -779,8 +900,21 @@
             }
         }
 
-        function recarregarFicha(data) {
-            currentSavedData = data;
+        function escapeHtml(value) {
+            if (value === undefined || value === null) return '';
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        function recarregarFicha(index) {
+            const item = savedFichasCache[index];
+            if (!item) return;
+            const data = item.data;
+
+            currentSavedData = Object.assign({ id: item.id }, data);
+
             document.getElementById('cliente').value = data.cliente || '';
             document.getElementById('num_chamado').value = data.num_chamado || '';
             document.getElementById('data_abertura').value = data.data_abertura || '';
@@ -802,6 +936,7 @@
             document.getElementById('observacoes').value = data.observacoes || '';
             document.getElementById('colaborador_brmobility').value = data.colaborador_brmobility || '';
 
+            hasSignature = !!data.assinatura_responsavel;
             if (data.assinatura_responsavel) {
                 document.getElementById('assinatura_base64').value = data.assinatura_responsavel;
                 const imgPreview = document.getElementById('sig-image-preview');
@@ -813,6 +948,32 @@
             showScreen('form-screen');
             document.getElementById('btn-pdf').style.display = 'inline-block';
             document.getElementById('btn-whatsapp').style.display = 'inline-block';
+        }
+
+        // ================= EXCLUSÃO DE FICHA (protegida por senha) =================
+        async function excluirFicha(index) {
+            const item = savedFichasCache[index];
+            if (!item) return;
+
+            const senha = prompt("Digite a senha para excluir esta ficha:");
+            if (senha === null) return; // usuário cancelou
+
+            if (senha !== SENHA_EXCLUSAO) {
+                alert("Senha incorreta. A ficha não foi excluída.");
+                return;
+            }
+
+            const confirmar = confirm(`Tem certeza que deseja excluir a ficha do chamado ${item.data.num_chamado || ''}?\n\nEsta ação não pode ser desfeita.`);
+            if (!confirmar) return;
+
+            try {
+                await db.collection("fichas_rac").doc(item.id).delete();
+                alert("Ficha excluída com sucesso.");
+                openSavedList(); // recarrega a lista
+            } catch (error) {
+                console.error("Erro ao excluir ficha:", error);
+                alert("Erro ao excluir a ficha. Verifique a conexão e tente novamente.");
+            }
         }
     </script>
 </body>
