@@ -279,6 +279,22 @@
             gap: 8px;
             flex-wrap: wrap;
         }
+
+        /* Grade de fotos anexadas, exibida dentro do próprio pdf-content
+           para que apareçam também no PDF exportado */
+        .fotos-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .fotos-grid .foto-thumb {
+            width: 110px;
+            height: 110px;
+            object-fit: cover;
+            border: 1px solid #999;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
@@ -402,6 +418,9 @@
                     </div>
                 </div>
 
+                <div class="section-title" id="fotos-section-title" style="display:none;">EVIDÊNCIAS FOTOGRÁFICAS</div>
+                <div id="fotos-pdf-container" class="fotos-grid"></div>
+
                 <div class="rac-footer">
                     <div class="form-group">
                         <label>Colaborador BRMobility</label>
@@ -422,7 +441,7 @@
         <!-- Campos de Mídia -->
         <div class="media-section">
             <div class="form-group">
-                <label>Fotos (Mínimo 1, Máximo 5 obrigatórias):</label>
+                <label>Fotos (opcional, máximo 5):</label>
                 <input type="file" id="input-fotos" accept="image/*" multiple capture="environment">
                 <small id="foto-contador" style="color: #666; margin-top: 3px;">Nenhuma foto selecionada</small>
             </div>
@@ -491,6 +510,7 @@
         let canvas, ctx, painting = false;
         let hasSignature = false;
         let selectedPhotos = [];
+        let selectedPhotosBase64 = [];
         let selectedVideoName = "";
         let currentSavedData = null;
         // Cache das fichas carregadas do Firestore (usado por recarregarFicha/excluirFicha
@@ -519,9 +539,11 @@
             document.getElementById('sig-placeholder').style.display = 'block';
             
             selectedPhotos = [];
+            selectedPhotosBase64 = [];
             selectedVideoName = "";
             document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
             document.getElementById('video-contador').innerText = "Nenhum vídeo selecionado";
+            renderFotosPreview();
             document.getElementById('btn-pdf').style.display = 'none';
             document.getElementById('btn-whatsapp').style.display = 'none';
             showScreen('form-screen');
@@ -722,18 +744,71 @@
             closeSignatureModal();
         }
 
+        // Lê os arquivos de foto selecionados e converte cada um para base64,
+        // para que possam ser desenhados como <img> dentro do pdf-content
+        // (o html2pdf exporta exatamente o que está renderizado nesse elemento).
+        function lerFotosComoBase64(files) {
+            return Promise.all(files.map(file => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            })));
+        }
+
+        function renderFotosPreview() {
+            const container = document.getElementById('fotos-pdf-container');
+            const titleEl = document.getElementById('fotos-section-title');
+            if (!container || !titleEl) return;
+
+            container.innerHTML = '';
+            if (selectedPhotosBase64.length === 0) {
+                titleEl.style.display = 'none';
+                return;
+            }
+            titleEl.style.display = 'block';
+            selectedPhotosBase64.forEach(src => {
+                const img = document.createElement('img');
+                img.src = src;
+                img.className = 'foto-thumb';
+                container.appendChild(img);
+            });
+        }
+
         function setupMediaValidation() {
-            document.getElementById('input-fotos').addEventListener('change', (e) => {
+            document.getElementById('input-fotos').addEventListener('change', async (e) => {
                 const files = Array.from(e.target.files);
-                if (files.length < 1 || files.length > 5) {
-                    alert("Por favor, selecione no mínimo 1 e no máximo 5 fotos.");
+
+                // Fotos são opcionais; só limitamos o máximo de 5
+                if (files.length > 5) {
+                    alert("Máximo de 5 fotos permitidas.");
                     e.target.value = "";
                     selectedPhotos = [];
+                    selectedPhotosBase64 = [];
                     document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
+                    renderFotosPreview();
                     return;
                 }
+
                 selectedPhotos = files;
+
+                if (files.length === 0) {
+                    selectedPhotosBase64 = [];
+                    document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
+                    renderFotosPreview();
+                    return;
+                }
+
                 document.getElementById('foto-contador').innerText = `${files.length} foto(s) anexada(s).`;
+
+                try {
+                    selectedPhotosBase64 = await lerFotosComoBase64(files);
+                } catch (err) {
+                    console.error("Erro ao processar as fotos:", err);
+                    selectedPhotosBase64 = [];
+                    alert("Não foi possível processar uma das fotos selecionadas. Tente novamente.");
+                }
+                renderFotosPreview();
             });
 
             document.getElementById('input-video').addEventListener('change', (e) => {
@@ -760,8 +835,8 @@
                 return;
             }
 
-            if (selectedPhotos.length < 1 || selectedPhotos.length > 5) {
-                alert("É obrigatório anexar de 1 a 5 fotos para prosseguir.");
+            if (selectedPhotos.length > 5) {
+                alert("Máximo de 5 fotos permitidas.");
                 return;
             }
 
