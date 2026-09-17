@@ -7,13 +7,9 @@
     <!-- Firebase SDK (Firestore) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
-    <!-- jsPDF: usado para montar o PDF manualmente (texto, assinatura e fotos
-         desenhados diretamente no documento), evitando os problemas de
-         "fotografar a tela" do html2canvas/html2pdf (assinatura sumindo,
-         cortes por flexbox, etc.) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    
+    <!-- html2pdf para gerar o PDF idêntico ao documento original -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
     <style>
         :root {
             --primary-color: #00778f;
@@ -26,9 +22,6 @@
             background-color: #f4f4f4;
             color: #000;
         }
-        /* Trava o scroll do body quando o modal de assinatura está aberto,
-           evitando que a barra de endereço do navegador mude de tamanho
-           no meio da assinatura e desalinhe o canvas */
         body.modal-open {
             overflow: hidden;
             position: fixed;
@@ -46,7 +39,6 @@
         .screen.active {
             display: block;
         }
-        /* Tela Inicial */
         #home-screen {
             text-align: center;
             padding: 50px 20px;
@@ -67,8 +59,6 @@
         .home-btn:hover {
             opacity: 0.9;
         }
-
-        /* Documento RAC Layout Exato do Word */
         .rac-container {
             border: 1px solid var(--border-color);
             padding: 15px;
@@ -141,8 +131,6 @@
             align-items: center;
             margin-top: 4px;
         }
-        
-        /* Caixa de Assinatura (Exibição da Imagem capturada ou Botão) */
         .signature-preview-container {
             border: 1px dashed #777;
             background: #fafafa;
@@ -165,17 +153,12 @@
             text-align: center;
             font-weight: bold;
         }
-
-        /* MODAL DE ASSINATURA EM TELA CHEIA */
         #signature-modal {
             display: none;
             position: fixed;
             top: 0;
             left: 0;
             width: 100vw;
-            /* fallback para navegadores sem suporte a dvh; a altura real
-               é recalculada via JS em ajustarAlturaModal() para acompanhar
-               a barra de endereço do navegador mobile */
             height: 100vh;
             height: 100dvh;
             background: rgba(0, 0, 0, 0.85);
@@ -204,7 +187,7 @@
         }
         .modal-canvas-wrapper {
             flex: 1 1 auto;
-            min-height: 0; /* evita que o canvas "empurre" o rodapé para fora da tela */
+            min-height: 0;
             background: white;
             margin: 15px 0;
             border-radius: 8px;
@@ -236,8 +219,6 @@
         .btn-modal-clear { background-color: #ffc107; color: #000; }
         .btn-modal-cancel { background-color: #6c757d; color: white; }
         .btn-modal-save { background-color: #28a745; color: white; }
-
-        /* Mídia e Botões de Ação */
         .media-section {
             margin-top: 15px;
             border-top: 1px dashed #ccc;
@@ -264,8 +245,6 @@
         .btn-whatsapp { background-color: #25d366; color: white; display: none; }
         .btn-back { background-color: #6c757d; color: white; }
         .btn-delete { background-color: #dc3545; color: white; }
-        
-        /* Lista de Fichas Salvas */
         .saved-item {
             background: #fff;
             border: 1px solid #ccc;
@@ -283,9 +262,6 @@
             gap: 8px;
             flex-wrap: wrap;
         }
-
-        /* Grade de fotos anexadas, exibida dentro do próprio pdf-content
-           para que apareçam também no PDF exportado */
         .fotos-grid {
             display: flex;
             flex-wrap: wrap;
@@ -303,7 +279,6 @@
 </head>
 <body>
 
-    <!-- 1. TELA INICIAL -->
     <div id="home-screen" class="screen active">
         <h1>BRMobility</h1>
         <p>Relatório de Atendimento ao Cliente (RAC)</p>
@@ -311,9 +286,7 @@
         <button class="home-btn" style="background-color: #555;" onclick="openSavedList()">Fichas (RAC) Salvas</button>
     </div>
 
-    <!-- 2. TELA DE NOVA FICHA (RAC) -->
     <div id="form-screen" class="screen">
-        <!-- Elemento encapsulado para exportação exata em PDF -->
         <div id="pdf-content" class="rac-container">
             <div class="rac-header">
                 <h3 style="margin: 0; color: #00778f; font-size: 16px;">BRMobility</h3>
@@ -442,7 +415,6 @@
             </form>
         </div>
 
-        <!-- Campos de Mídia -->
         <div class="media-section">
             <div class="form-group">
                 <label>Fotos (opcional, máximo 5):</label>
@@ -464,7 +436,6 @@
         </div>
     </div>
 
-    <!-- 3. TELA DE FICHAS SALVAS -->
     <div id="saved-screen" class="screen">
         <h2>Fichas (RAC) Salvas</h2>
         <div id="saved-list-container">
@@ -475,7 +446,6 @@
         </div>
     </div>
 
-    <!-- MODAL DE ASSINATURA EM TELA CHEIA -->
     <div id="signature-modal">
         <div class="modal-header">
             <h3>Assinatura do Responsável</h3>
@@ -492,7 +462,6 @@
     </div>
 
     <script>
-        // ================= CONFIGURAÇÃO DO FIREBASE =================
         const firebaseConfig = {
             apiKey: "AIzaSyC133WKh3TTltm_47wu3HWoOgv5Vp2HnXQ",
             authDomain: "rac-tec-externo-atendimentos.firebaseapp.com",
@@ -507,24 +476,17 @@
             firebase.initializeApp(firebaseConfig);
         }
         const db = firebase.firestore();
-        const storage = firebase.storage();
 
-        // Senha exigida para excluir uma ficha já salva
         const SENHA_EXCLUSAO = "BRM@2026";
 
         let canvas, ctx, painting = false;
         let hasSignature = false;
+
         let selectedPhotos = [];
-        // Fotos recém-selecionadas neste dispositivo (já convertidas em base64,
-        // usadas tanto para o preview quanto para ir direto no PDF)
-        let fotosBase64Locais = [];
-        // URLs do Firebase Storage de uma ficha já salva, carregada via
-        // "Visualizar/Baixar" (usadas para exibir e, se possível, incluir no PDF)
-        let fotosUrlsRemotas = [];
+        let fotosBase64 = [];
+
         let selectedVideoName = "";
         let currentSavedData = null;
-        // Cache das fichas carregadas do Firestore (usado por recarregarFicha/excluirFicha
-        // via índice, evitando problemas de escaping ao colocar JSON dentro de onclick)
         let savedFichasCache = [];
 
         document.addEventListener("DOMContentLoaded", () => {
@@ -547,10 +509,9 @@
             document.getElementById('assinatura_base64').value = "";
             document.getElementById('sig-image-preview').style.display = 'none';
             document.getElementById('sig-placeholder').style.display = 'block';
-            
+
             selectedPhotos = [];
-            fotosBase64Locais = [];
-            fotosUrlsRemotas = [];
+            fotosBase64 = [];
             selectedVideoName = "";
             document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
             document.getElementById('video-contador').innerText = "Nenhum vídeo selecionado";
@@ -566,18 +527,17 @@
             const mm = String(now.getMonth() + 1).padStart(2, '0');
             const dd = String(now.getDate()).padStart(2, '0');
             document.getElementById('data_atendimento').value = `${yyyy}-${mm}-${dd}`;
-            
+
             const hours = String(now.getHours()).padStart(2, '0');
             const minutes = String(now.getMinutes()).padStart(2, '0');
             document.getElementById('horario_atendimento').value = `${hours}:${minutes}`;
         }
 
-        // ================= MÁSCARA DE TELEFONE =================
         function setupPhoneMask() {
             const phoneInput = document.getElementById('contato_responsavel');
             phoneInput.addEventListener('input', (e) => {
-                let value = e.target.value.replace(/\D/g, ''); 
-                if (value.length > 11) value = value.substring(0, 11); 
+                let value = e.target.value.replace(/\D/g, '');
+                if (value.length > 11) value = value.substring(0, 11);
 
                 if (value.length > 6) {
                     value = `(${value.substring(0, 2)}) ${value.substring(2, 7)}-${value.substring(7)}`;
@@ -590,7 +550,6 @@
             });
         }
 
-        // ================= ASSINATURA EM TELA CHEIA (MODAL) =================
         function initSignaturePad() {
             canvas = document.getElementById('sig-canvas');
             ctx = canvas.getContext('2d');
@@ -601,9 +560,6 @@
                 const clientX = touch ? touch.clientX : e.clientX;
                 const clientY = touch ? touch.clientY : e.clientY;
 
-                // Calcula a proporção real entre a resolução do canvas (em pixels)
-                // e o tamanho exibido na tela (em CSS px), para mapear o toque
-                // corretamente mesmo em telas de alta densidade (devicePixelRatio)
                 const scaleX = canvas.width / rect.width;
                 const scaleY = canvas.height / rect.height;
 
@@ -618,8 +574,6 @@
                 painting = true;
                 hasSignature = true;
                 const pos = getPos(e);
-                // Corrige o bug do primeiro traço: sem isto, o primeiro lineTo()
-                // partia do canto (0,0) do canvas em vez do ponto tocado
                 ctx.beginPath();
                 ctx.moveTo(pos.x, pos.y);
             };
@@ -651,10 +605,6 @@
             canvas.addEventListener('touchmove', draw, { passive: false });
         }
 
-        // Retorna a altura real visível do navegador (descontando a barra de
-        // endereço/teclado), usando visualViewport quando disponível. Isso é
-        // o que resolve o "não ajusta na tela do celular": 100vh no mobile
-        // costuma incluir a área coberta pela barra de endereço.
         function getAlturaVisivel() {
             if (window.visualViewport) return window.visualViewport.height;
             return window.innerHeight;
@@ -665,9 +615,6 @@
             modal.style.height = getAlturaVisivel() + 'px';
         }
 
-        // Redimensiona o buffer real do canvas para bater exatamente com o
-        // tamanho exibido em tela, usando devicePixelRatio para um traço
-        // nítido (sem isso a imagem final ficava borrada/pequena).
         function resizeSignatureCanvas(preservarDesenho) {
             if (!canvas) return;
             let imagemSalva = null;
@@ -713,13 +660,9 @@
             modal.classList.add('active');
             ajustarAlturaModal();
 
-            // Espera o navegador aplicar o layout (barra de endereço já
-            // recolhida/expandida) antes de medir o wrapper do canvas
             requestAnimationFrame(() => {
                 setTimeout(() => {
                     ajustarAlturaModal();
-                    // Preserva o desenho já existente caso o usuário reabra
-                    // o modal para continuar/ajustar a assinatura
                     resizeSignatureCanvas(hasSignature);
                 }, 60);
             });
@@ -746,7 +689,6 @@
             const dataURL = canvas.toDataURL('image/png');
             document.getElementById('assinatura_base64').value = dataURL;
 
-            // Mostra a miniatura da assinatura na tela principal
             const imgPreview = document.getElementById('sig-image-preview');
             imgPreview.src = dataURL;
             imgPreview.style.display = 'block';
@@ -755,12 +697,6 @@
             closeSignatureModal();
         }
 
-        // Lê os arquivos de foto selecionados e converte cada um para base64,
-        // para que possam ser desenhados como <img> dentro do pdf-content
-        // (o html2pdf exporta exatamente o que está renderizado nesse elemento).
-        // Redimensiona e comprime a foto antes de transformar em base64.
-        // Isso é essencial para conseguir SALVAR as fotos no Firestore
-        // (limite de ~1MB por documento) e para o PDF ficar leve.
         function comprimirImagem(file, maxDim = 1000, qualidade = 0.6) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -794,7 +730,6 @@
             return Promise.all(files.map(file => comprimirImagem(file)));
         }
 
-        // Estima o tamanho em bytes de uma string base64 (data URL)
         function tamanhoBase64EmBytes(dataUrl) {
             if (!dataUrl) return 0;
             const semPrefixo = dataUrl.split(',')[1] || '';
@@ -806,72 +741,52 @@
             const titleEl = document.getElementById('fotos-section-title');
             if (!container || !titleEl) return;
 
-            // Prioriza fotos recém-selecionadas; se não houver, usa as
-            // vindas do Storage (ficha reaberta)
-            const fotos = fotosBase64Locais.length > 0 ? fotosBase64Locais : fotosUrlsRemotas;
-
             container.innerHTML = '';
-            if (fotos.length === 0) {
+            if (fotosBase64.length === 0) {
                 titleEl.style.display = 'none';
                 return;
             }
             titleEl.style.display = 'block';
-            fotos.forEach(src => {
+            fotosBase64.forEach(src => {
                 const img = document.createElement('img');
                 img.src = src;
                 img.className = 'foto-thumb';
-                img.crossOrigin = 'anonymous';
                 container.appendChild(img);
             });
-        }
-
-        // Converte uma URL (ex.: do Firebase Storage) em base64, para poder
-        // ser desenhada dentro do PDF via jsPDF. Pode falhar por CORS se o
-        // bucket do Storage não estiver configurado para isso — nesse caso
-        // a foto simplesmente é ignorada no PDF (mas continua visível na tela).
-        function urlParaBase64(url) {
-            return fetch(url, { mode: 'cors' })
-                .then(res => res.blob())
-                .then(blob => new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(blob);
-                }));
         }
 
         function setupMediaValidation() {
             document.getElementById('input-fotos').addEventListener('change', async (e) => {
                 const files = Array.from(e.target.files);
 
-                // Fotos são opcionais; só limitamos o máximo de 5
                 if (files.length > 5) {
                     alert("Máximo de 5 fotos permitidas.");
                     e.target.value = "";
                     selectedPhotos = [];
-                    fotosBase64Locais = [];
+                    fotosBase64 = [];
                     document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
                     renderFotosPreview();
                     return;
                 }
 
                 selectedPhotos = files;
-                fotosUrlsRemotas = []; // novas fotos locais substituem as de uma ficha reaberta
 
                 if (files.length === 0) {
-                    fotosBase64Locais = [];
+                    fotosBase64 = [];
                     document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
                     renderFotosPreview();
                     return;
                 }
 
-                document.getElementById('foto-contador').innerText = `${files.length} foto(s) anexada(s).`;
+                document.getElementById('foto-contador').innerText = `${files.length} foto(s) anexada(s). Processando...`;
 
                 try {
-                    fotosBase64Locais = await lerFotosComoBase64(files);
+                    fotosBase64 = await lerFotosComoBase64(files);
+                    document.getElementById('foto-contador').innerText = `${files.length} foto(s) anexada(s).`;
                 } catch (err) {
                     console.error("Erro ao processar as fotos:", err);
-                    fotosBase64Locais = [];
+                    fotosBase64 = [];
+                    document.getElementById('foto-contador').innerText = "Erro ao processar as fotos selecionadas.";
                     alert("Não foi possível processar uma das fotos selecionadas. Tente novamente.");
                 }
                 renderFotosPreview();
@@ -901,16 +816,11 @@
                 return;
             }
 
-            if (selectedPhotos.length > 5) {
-                alert("Máximo de 5 fotos permitidas.");
-                return;
-            }
-
             const assinaturaValor = document.getElementById('assinatura_base64').value;
             let tamanhoTotal = tamanhoBase64EmBytes(assinaturaValor);
-            selectedPhotosBase64.forEach(f => tamanhoTotal += tamanhoBase64EmBytes(f));
+            fotosBase64.forEach(f => tamanhoTotal += tamanhoBase64EmBytes(f));
             if (tamanhoTotal > 900000) {
-                alert("As fotos selecionadas são muito grandes para salvar. Tente selecionar menos fotos ou fotos com resolução menor.");
+                alert("As fotos selecionadas são muito grandes para salvar. Tente selecionar menos fotos.");
                 return;
             }
 
@@ -940,9 +850,9 @@
                     veiculos_entrando: document.getElementById('veiculos_entrando').value,
                     observacoes: document.getElementById('observacoes').value,
                     colaborador_brmobility: document.getElementById('colaborador_brmobility').value,
-                    assinatura_responsavel: document.getElementById('assinatura_base64').value,
-                    fotos_base64: selectedPhotosBase64,
-                    qtd_fotos: selectedPhotos.length,
+                    assinatura_responsavel: assinaturaValor,
+                    fotos_base64: fotosBase64,
+                    qtd_fotos: fotosBase64.length,
                     tem_video: selectedVideoName ? "Sim" : "Não",
                     createdAt: new Date().toISOString()
                 };
@@ -956,16 +866,13 @@
                 document.getElementById('btn-whatsapp').style.display = 'inline-block';
             } catch (error) {
                 console.error("Erro ao salvar: ", error);
-                alert("Erro ao salvar a ficha. Verifique a conexão.");
+                alert("Erro ao salvar a ficha. Verifique a conexão e tente novamente.\n\nDetalhe técnico: " + (error && error.message ? error.message : error));
             } finally {
                 btnSalvar.innerText = "Salvar Ficha";
                 btnSalvar.disabled = false;
             }
         }
 
-        // Espera todas as imagens dentro do elemento estarem completamente
-        // carregadas antes de deixar o html2canvas tirar o "print". Sem isso,
-        // a assinatura e as fotos às vezes saíam em branco no PDF.
         function esperarImagensCarregarem(container) {
             const imgs = Array.from(container.querySelectorAll('img'));
             return Promise.all(imgs.map(img => {
@@ -986,42 +893,41 @@
             btnPdf.innerText = "Gerando PDF...";
             btnPdf.disabled = true;
 
-            await esperarImagensCarregarem(element);
-
-            const opt = {
-                margin:       10,
-                filename:     `RAC_${chamadoNum}.pdf`,
-                image:        { type: 'jpeg', quality: 0.98 },
-                html2canvas:  {
-                    scale: 2,
-                    useCORS: true,
-                    allowTaint: true,
-                    onclone: (clonedDoc) => {
-                        // A assinatura e as fotos usam max-height/width em %
-                        // dentro de containers flex; o html2canvas às vezes
-                        // não calcula isso corretamente no documento clonado.
-                        // Forçamos um tamanho fixo em pixels só para a exportação.
-                        const sigImg = clonedDoc.getElementById('sig-image-preview');
-                        if (sigImg && sigImg.getAttribute('src')) {
-                            sigImg.style.display = 'block';
-                            sigImg.style.maxHeight = 'none';
-                            sigImg.style.maxWidth = 'none';
-                            sigImg.style.width = '220px';
-                            sigImg.style.height = 'auto';
-                        }
-                        clonedDoc.querySelectorAll('#pdf-content .foto-thumb').forEach(img => {
-                            img.style.width = '110px';
-                            img.style.height = '110px';
-                            img.style.maxWidth = 'none';
-                            img.style.maxHeight = 'none';
-                        });
-                    }
-                },
-                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-            };
-
             try {
+                await esperarImagensCarregarem(element);
+
+                const opt = {
+                    margin:       10,
+                    filename:     `RAC_${chamadoNum}.pdf`,
+                    image:        { type: 'jpeg', quality: 0.98 },
+                    html2canvas:  {
+                        scale: 2,
+                        useCORS: true,
+                        allowTaint: true,
+                        onclone: (clonedDoc) => {
+                            const sigImg = clonedDoc.getElementById('sig-image-preview');
+                            if (sigImg && sigImg.getAttribute('src')) {
+                                sigImg.style.display = 'block';
+                                sigImg.style.maxHeight = 'none';
+                                sigImg.style.maxWidth = 'none';
+                                sigImg.style.width = '220px';
+                                sigImg.style.height = 'auto';
+                            }
+                            clonedDoc.querySelectorAll('#pdf-content .foto-thumb').forEach(img => {
+                                img.style.width = '110px';
+                                img.style.height = '110px';
+                                img.style.maxWidth = 'none';
+                                img.style.maxHeight = 'none';
+                            });
+                        }
+                    },
+                    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                };
+
                 await html2pdf().from(element).set(opt).save();
+            } catch (error) {
+                console.error("Erro ao gerar PDF:", error);
+                alert("Não foi possível gerar o PDF. Tente novamente.");
             } finally {
                 btnPdf.innerText = textoOriginal;
                 btnPdf.disabled = false;
@@ -1126,12 +1032,12 @@
             document.getElementById('contato_responsavel').value = data.contato_responsavel || '';
             document.getElementById('modelo_veiculos').value = data.modelo_veiculos || '';
             document.getElementById('num_patrimonio').value = data.num_patrimonio || '';
-            
+
             if (data.utilizacao) {
                 const radio = document.querySelector(`input[name="utilizacao"][value="${data.utilizacao}"]`);
                 if (radio) radio.checked = true;
             }
-            
+
             document.getElementById('solicitacao').value = data.solicitacao || '';
             document.getElementById('veiculos_saindo').value = data.veiculos_saindo || '';
             document.getElementById('veiculos_entrando').value = data.veiculos_entrando || '';
@@ -1145,15 +1051,17 @@
                 imgPreview.src = data.assinatura_responsavel;
                 imgPreview.style.display = 'block';
                 document.getElementById('sig-placeholder').style.display = 'none';
+            } else {
+                document.getElementById('assinatura_base64').value = '';
+                document.getElementById('sig-image-preview').style.display = 'none';
+                document.getElementById('sig-placeholder').style.display = 'block';
             }
 
-            // Recarrega as fotos salvas junto com a ficha (para aparecerem
-            // na tela e no PDF gerado a partir de uma ficha já salva)
             selectedPhotos = [];
-            selectedPhotosBase64 = Array.isArray(data.fotos_base64) ? data.fotos_base64 : [];
+            fotosBase64 = Array.isArray(data.fotos_base64) ? data.fotos_base64 : [];
             renderFotosPreview();
-            if (selectedPhotosBase64.length > 0) {
-                document.getElementById('foto-contador').innerText = `${selectedPhotosBase64.length} foto(s) carregada(s) desta ficha.`;
+            if (fotosBase64.length > 0) {
+                document.getElementById('foto-contador').innerText = `${fotosBase64.length} foto(s) carregada(s) desta ficha.`;
             } else {
                 document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
             }
@@ -1163,13 +1071,12 @@
             document.getElementById('btn-whatsapp').style.display = 'inline-block';
         }
 
-        // ================= EXCLUSÃO DE FICHA (protegida por senha) =================
         async function excluirFicha(index) {
             const item = savedFichasCache[index];
             if (!item) return;
 
             const senha = prompt("Digite a senha para excluir esta ficha:");
-            if (senha === null) return; // usuário cancelou
+            if (senha === null) return;
 
             if (senha !== SENHA_EXCLUSAO) {
                 alert("Senha incorreta. A ficha não foi excluída.");
@@ -1182,7 +1089,7 @@
             try {
                 await db.collection("fichas_rac").doc(item.id).delete();
                 alert("Ficha excluída com sucesso.");
-                openSavedList(); // recarrega a lista
+                openSavedList();
             } catch (error) {
                 console.error("Erro ao excluir ficha:", error);
                 alert("Erro ao excluir a ficha. Verifique a conexão e tente novamente.");
