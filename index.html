@@ -7,8 +7,12 @@
     <!-- Firebase SDK (Firestore) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-    <!-- html2pdf para gerar o PDF idêntico ao documento original -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+    <!-- jsPDF: usado para montar o PDF manualmente (texto, assinatura e fotos
+         desenhados diretamente no documento), evitando os problemas de
+         "fotografar a tela" do html2canvas/html2pdf (assinatura sumindo,
+         cortes por flexbox, etc.) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
     <style>
         :root {
@@ -503,6 +507,7 @@
             firebase.initializeApp(firebaseConfig);
         }
         const db = firebase.firestore();
+        const storage = firebase.storage();
 
         // Senha exigida para excluir uma ficha já salva
         const SENHA_EXCLUSAO = "BRM@2026";
@@ -510,7 +515,12 @@
         let canvas, ctx, painting = false;
         let hasSignature = false;
         let selectedPhotos = [];
-        let selectedPhotosBase64 = [];
+        // Fotos recém-selecionadas neste dispositivo (já convertidas em base64,
+        // usadas tanto para o preview quanto para ir direto no PDF)
+        let fotosBase64Locais = [];
+        // URLs do Firebase Storage de uma ficha já salva, carregada via
+        // "Visualizar/Baixar" (usadas para exibir e, se possível, incluir no PDF)
+        let fotosUrlsRemotas = [];
         let selectedVideoName = "";
         let currentSavedData = null;
         // Cache das fichas carregadas do Firestore (usado por recarregarFicha/excluirFicha
@@ -539,7 +549,8 @@
             document.getElementById('sig-placeholder').style.display = 'block';
             
             selectedPhotos = [];
-            selectedPhotosBase64 = [];
+            fotosBase64Locais = [];
+            fotosUrlsRemotas = [];
             selectedVideoName = "";
             document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
             document.getElementById('video-contador').innerText = "Nenhum vídeo selecionado";
@@ -747,13 +758,47 @@
         // Lê os arquivos de foto selecionados e converte cada um para base64,
         // para que possam ser desenhados como <img> dentro do pdf-content
         // (o html2pdf exporta exatamente o que está renderizado nesse elemento).
-        function lerFotosComoBase64(files) {
-            return Promise.all(files.map(file => new Promise((resolve, reject) => {
+        // Redimensiona e comprime a foto antes de transformar em base64.
+        // Isso é essencial para conseguir SALVAR as fotos no Firestore
+        // (limite de ~1MB por documento) e para o PDF ficar leve.
+        function comprimirImagem(file, maxDim = 1000, qualidade = 0.6) {
+            return new Promise((resolve, reject) => {
                 const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        let { width, height } = img;
+                        if (width > height && width > maxDim) {
+                            height = Math.round(height * (maxDim / width));
+                            width = maxDim;
+                        } else if (height >= width && height > maxDim) {
+                            width = Math.round(width * (maxDim / height));
+                            height = maxDim;
+                        }
+                        const canvasTmp = document.createElement('canvas');
+                        canvasTmp.width = width;
+                        canvasTmp.height = height;
+                        const ctxTmp = canvasTmp.getContext('2d');
+                        ctxTmp.drawImage(img, 0, 0, width, height);
+                        resolve(canvasTmp.toDataURL('image/jpeg', qualidade));
+                    };
+                    img.onerror = reject;
+                    img.src = e.target.result;
+                };
                 reader.onerror = reject;
                 reader.readAsDataURL(file);
-            })));
+            });
+        }
+
+        function lerFotosComoBase64(files) {
+            return Promise.all(files.map(file => comprimirImagem(file)));
+        }
+
+        // Estima o tamanho em bytes de uma string base64 (data URL)
+        function tamanhoBase64EmBytes(dataUrl) {
+            if (!dataUrl) return 0;
+            const semPrefixo = dataUrl.split(',')[1] || '';
+            return Math.ceil(semPrefixo.length * 3 / 4);
         }
 
         function renderFotosPreview() {
@@ -761,18 +806,38 @@
             const titleEl = document.getElementById('fotos-section-title');
             if (!container || !titleEl) return;
 
+            // Prioriza fotos recém-selecionadas; se não houver, usa as
+            // vindas do Storage (ficha reaberta)
+            const fotos = fotosBase64Locais.length > 0 ? fotosBase64Locais : fotosUrlsRemotas;
+
             container.innerHTML = '';
-            if (selectedPhotosBase64.length === 0) {
+            if (fotos.length === 0) {
                 titleEl.style.display = 'none';
                 return;
             }
             titleEl.style.display = 'block';
-            selectedPhotosBase64.forEach(src => {
+            fotos.forEach(src => {
                 const img = document.createElement('img');
                 img.src = src;
                 img.className = 'foto-thumb';
+                img.crossOrigin = 'anonymous';
                 container.appendChild(img);
             });
+        }
+
+        // Converte uma URL (ex.: do Firebase Storage) em base64, para poder
+        // ser desenhada dentro do PDF via jsPDF. Pode falhar por CORS se o
+        // bucket do Storage não estiver configurado para isso — nesse caso
+        // a foto simplesmente é ignorada no PDF (mas continua visível na tela).
+        function urlParaBase64(url) {
+            return fetch(url, { mode: 'cors' })
+                .then(res => res.blob())
+                .then(blob => new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                }));
         }
 
         function setupMediaValidation() {
@@ -784,16 +849,17 @@
                     alert("Máximo de 5 fotos permitidas.");
                     e.target.value = "";
                     selectedPhotos = [];
-                    selectedPhotosBase64 = [];
+                    fotosBase64Locais = [];
                     document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
                     renderFotosPreview();
                     return;
                 }
 
                 selectedPhotos = files;
+                fotosUrlsRemotas = []; // novas fotos locais substituem as de uma ficha reaberta
 
                 if (files.length === 0) {
-                    selectedPhotosBase64 = [];
+                    fotosBase64Locais = [];
                     document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
                     renderFotosPreview();
                     return;
@@ -802,10 +868,10 @@
                 document.getElementById('foto-contador').innerText = `${files.length} foto(s) anexada(s).`;
 
                 try {
-                    selectedPhotosBase64 = await lerFotosComoBase64(files);
+                    fotosBase64Locais = await lerFotosComoBase64(files);
                 } catch (err) {
                     console.error("Erro ao processar as fotos:", err);
-                    selectedPhotosBase64 = [];
+                    fotosBase64Locais = [];
                     alert("Não foi possível processar uma das fotos selecionadas. Tente novamente.");
                 }
                 renderFotosPreview();
@@ -840,6 +906,14 @@
                 return;
             }
 
+            const assinaturaValor = document.getElementById('assinatura_base64').value;
+            let tamanhoTotal = tamanhoBase64EmBytes(assinaturaValor);
+            selectedPhotosBase64.forEach(f => tamanhoTotal += tamanhoBase64EmBytes(f));
+            if (tamanhoTotal > 900000) {
+                alert("As fotos selecionadas são muito grandes para salvar. Tente selecionar menos fotos ou fotos com resolução menor.");
+                return;
+            }
+
             const btnSalvar = document.getElementById('btn-salvar');
             btnSalvar.innerText = "Salvando...";
             btnSalvar.disabled = true;
@@ -867,6 +941,7 @@
                     observacoes: document.getElementById('observacoes').value,
                     colaborador_brmobility: document.getElementById('colaborador_brmobility').value,
                     assinatura_responsavel: document.getElementById('assinatura_base64').value,
+                    fotos_base64: selectedPhotosBase64,
                     qtd_fotos: selectedPhotos.length,
                     tem_video: selectedVideoName ? "Sim" : "Não",
                     createdAt: new Date().toISOString()
@@ -888,17 +963,69 @@
             }
         }
 
-        function gerarPDF() {
+        // Espera todas as imagens dentro do elemento estarem completamente
+        // carregadas antes de deixar o html2canvas tirar o "print". Sem isso,
+        // a assinatura e as fotos às vezes saíam em branco no PDF.
+        function esperarImagensCarregarem(container) {
+            const imgs = Array.from(container.querySelectorAll('img'));
+            return Promise.all(imgs.map(img => {
+                if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+                return new Promise(resolve => {
+                    img.addEventListener('load', resolve, { once: true });
+                    img.addEventListener('error', resolve, { once: true });
+                });
+            }));
+        }
+
+        async function gerarPDF() {
             const element = document.getElementById('pdf-content');
             const chamadoNum = document.getElementById('num_chamado').value || 'atendimento';
+
+            const btnPdf = document.getElementById('btn-pdf');
+            const textoOriginal = btnPdf.innerText;
+            btnPdf.innerText = "Gerando PDF...";
+            btnPdf.disabled = true;
+
+            await esperarImagensCarregarem(element);
+
             const opt = {
                 margin:       10,
                 filename:     `RAC_${chamadoNum}.pdf`,
                 image:        { type: 'jpeg', quality: 0.98 },
-                html2canvas:  { scale: 2, useCORS: true },
+                html2canvas:  {
+                    scale: 2,
+                    useCORS: true,
+                    allowTaint: true,
+                    onclone: (clonedDoc) => {
+                        // A assinatura e as fotos usam max-height/width em %
+                        // dentro de containers flex; o html2canvas às vezes
+                        // não calcula isso corretamente no documento clonado.
+                        // Forçamos um tamanho fixo em pixels só para a exportação.
+                        const sigImg = clonedDoc.getElementById('sig-image-preview');
+                        if (sigImg && sigImg.getAttribute('src')) {
+                            sigImg.style.display = 'block';
+                            sigImg.style.maxHeight = 'none';
+                            sigImg.style.maxWidth = 'none';
+                            sigImg.style.width = '220px';
+                            sigImg.style.height = 'auto';
+                        }
+                        clonedDoc.querySelectorAll('#pdf-content .foto-thumb').forEach(img => {
+                            img.style.width = '110px';
+                            img.style.height = '110px';
+                            img.style.maxWidth = 'none';
+                            img.style.maxHeight = 'none';
+                        });
+                    }
+                },
                 jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
             };
-            html2pdf().from(element).set(opt).save();
+
+            try {
+                await html2pdf().from(element).set(opt).save();
+            } finally {
+                btnPdf.innerText = textoOriginal;
+                btnPdf.disabled = false;
+            }
         }
 
         function enviarWhatsApp() {
@@ -1018,6 +1145,17 @@
                 imgPreview.src = data.assinatura_responsavel;
                 imgPreview.style.display = 'block';
                 document.getElementById('sig-placeholder').style.display = 'none';
+            }
+
+            // Recarrega as fotos salvas junto com a ficha (para aparecerem
+            // na tela e no PDF gerado a partir de uma ficha já salva)
+            selectedPhotos = [];
+            selectedPhotosBase64 = Array.isArray(data.fotos_base64) ? data.fotos_base64 : [];
+            renderFotosPreview();
+            if (selectedPhotosBase64.length > 0) {
+                document.getElementById('foto-contador').innerText = `${selectedPhotosBase64.length} foto(s) carregada(s) desta ficha.`;
+            } else {
+                document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
             }
 
             showScreen('form-screen');
