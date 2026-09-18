@@ -7,8 +7,10 @@
     <!-- Firebase SDK (Firestore) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-    <!-- html2pdf para gerar o PDF idêntico ao documento original -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- html2canvas + jsPDF usados diretamente (sem o wrapper html2pdf.js),
+         para termos controle total sobre a captura em qualquer tamanho de tela -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <style>
         :root {
@@ -994,72 +996,122 @@
             pdf.addImage(src, 'JPEG', x, y, w, h);
         }
 
+        // Desenha um canvas (a captura do formulário) dentro do PDF,
+        // fatiando em várias páginas se o conteúdo for mais alto do que
+        // uma página A4 comporta. Reimplementado aqui (sem depender do
+        // html2pdf.js) para termos controle total sobre o resultado.
+        function adicionarImagemPaginada(pdf, canvasOrigem, margemMm) {
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const usableWidth = pageWidth - margemMm * 2;
+            const usableHeight = pageHeight - margemMm * 2;
+
+            const pxPorMm = canvasOrigem.width / usableWidth;
+            const alturaTotalMm = canvasOrigem.height / pxPorMm;
+
+            if (alturaTotalMm <= usableHeight) {
+                const imgData = canvasOrigem.toDataURL('image/jpeg', 0.95);
+                pdf.addImage(imgData, 'JPEG', margemMm, margemMm, usableWidth, alturaTotalMm);
+                return;
+            }
+
+            const alturaPaginaPx = Math.floor(usableHeight * pxPorMm);
+            let posicaoPx = 0;
+            let primeira = true;
+
+            while (posicaoPx < canvasOrigem.height) {
+                const fatiaAlturaPx = Math.min(alturaPaginaPx, canvasOrigem.height - posicaoPx);
+
+                const canvasFatia = document.createElement('canvas');
+                canvasFatia.width = canvasOrigem.width;
+                canvasFatia.height = fatiaAlturaPx;
+                canvasFatia.getContext('2d').drawImage(
+                    canvasOrigem,
+                    0, posicaoPx, canvasOrigem.width, fatiaAlturaPx,
+                    0, 0, canvasOrigem.width, fatiaAlturaPx
+                );
+
+                const fatiaImgData = canvasFatia.toDataURL('image/jpeg', 0.95);
+                const fatiaAlturaMm = fatiaAlturaPx / pxPorMm;
+
+                if (!primeira) pdf.addPage('a4', 'portrait');
+                pdf.addImage(fatiaImgData, 'JPEG', margemMm, margemMm, usableWidth, fatiaAlturaMm);
+
+                posicaoPx += fatiaAlturaPx;
+                primeira = false;
+            }
+        }
+
         async function gerarPDF() {
-            const element = document.getElementById('pdf-content');
+            const original = document.getElementById('pdf-content');
             const chamadoNum = document.getElementById('num_chamado').value || 'atendimento';
-            const fotosContainer = document.getElementById('fotos-pdf-container');
-            const fotosTitulo = document.getElementById('fotos-section-title');
 
             const btnPdf = document.getElementById('btn-pdf');
             const textoOriginal = btnPdf.innerText;
             btnPdf.innerText = "Gerando PDF...";
             btnPdf.disabled = true;
 
-            // Escondemos a grade de miniaturas na página do formulário: cada
-            // foto vai ganhar sua própria página cheia logo em seguida, então
-            // não faz sentido ela aparecer pequena dentro do formulário.
-            const displayOriginalContainer = fotosContainer.style.display;
-            const displayOriginalTitulo = fotosTitulo.style.display;
-            fotosContainer.style.display = 'none';
-            fotosTitulo.style.display = 'none';
+            let clone = null;
 
             try {
-                await esperarImagensCarregarem(element);
+                // Cria uma cópia do formulário FORA da tela, numa largura fixa
+                // "de computador" (780px). Isso é essencial: no celular, o
+                // formulário visível na tela é estreito e quebra muito mais
+                // linha, o que gerava um PDF com o conteúdo real "esmagado"
+                // e empurrado para páginas seguintes. Capturando sempre essa
+                // cópia de largura fixa, o PDF fica idêntico não importa o
+                // aparelho usado.
+                clone = original.cloneNode(true);
+                clone.removeAttribute('id');
+                clone.style.position = 'absolute';
+                clone.style.top = '0';
+                clone.style.left = '-99999px';
+                clone.style.width = '780px';
+                clone.style.maxWidth = 'none';
+                clone.style.boxSizing = 'border-box';
+                clone.style.background = '#ffffff';
 
-                const opt = {
-                    margin:       10,
-                    filename:     `RAC_${chamadoNum}.pdf`,
-                    image:        { type: 'jpeg', quality: 0.98 },
-                    html2canvas:  {
-                        scale: 2,
-                        useCORS: true,
-                        allowTaint: true,
-                        // Força a captura numa largura "de computador" (900px)
-                        // independente da largura real da tela do celular.
-                        // Sem isso, no celular o formulário quebra linha demais,
-                        // fica muito alto e estreito, e ao ser encaixado numa
-                        // página A4 o conteúdo real acaba quase todo empurrado
-                        // para a página seguinte, deixando a primeira em branco.
-                        windowWidth: 900,
-                        onclone: (clonedDoc) => {
-                            const sigImg = clonedDoc.getElementById('sig-image-preview');
-                            if (sigImg && sigImg.getAttribute('src')) {
-                                sigImg.style.display = 'block';
-                                sigImg.style.maxHeight = 'none';
-                                sigImg.style.maxWidth = 'none';
-                                sigImg.style.width = '220px';
-                                sigImg.style.height = 'auto';
-                            }
-                            // Garante que o formulário clonado use a largura
-                            // "de computador" completa (800px), como no design
-                            // original, mesmo tendo sido aberto num celular.
-                            const screenClonado = clonedDoc.getElementById('form-screen');
-                            if (screenClonado) {
-                                screenClonado.style.width = '800px';
-                                screenClonado.style.maxWidth = '800px';
-                            }
-                        }
-                    },
-                    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-                };
+                // Dentro do clone, escondemos a grade de miniaturas: cada foto
+                // ganha sua própria página cheia logo a seguir, então não
+                // precisa (nem deve) aparecer pequena dentro do formulário.
+                const fotosContainerClone = clone.querySelector('#fotos-pdf-container');
+                const fotosTituloClone = clone.querySelector('#fotos-section-title');
+                if (fotosContainerClone) fotosContainerClone.style.display = 'none';
+                if (fotosTituloClone) fotosTituloClone.style.display = 'none';
 
-                // Gera a(s) página(s) do formulário normalmente e mantém acesso
-                // à instância do jsPDF para poder acrescentar as páginas de fotos
-                const pdf = await html2pdf().set(opt).from(element).toPdf().get('pdf');
+                // Corrige o tamanho da assinatura dentro do clone (o cálculo
+                // de max-height/width em % às vezes falha fora do layout
+                // visível normal)
+                const sigImgClone = clone.querySelector('#sig-image-preview');
+                if (sigImgClone && sigImgClone.getAttribute('src')) {
+                    sigImgClone.style.display = 'block';
+                    sigImgClone.style.maxHeight = 'none';
+                    sigImgClone.style.maxWidth = 'none';
+                    sigImgClone.style.width = '220px';
+                    sigImgClone.style.height = 'auto';
+                }
 
-                // Já podemos restaurar a grade de miniaturas na tela do usuário
-                fotosContainer.style.display = displayOriginalContainer;
-                fotosTitulo.style.display = displayOriginalTitulo;
+                document.body.appendChild(clone);
+
+                await esperarImagensCarregarem(clone);
+                // Dá um instante para o navegador aplicar o layout de 780px
+                // antes de capturar (evita medir o elemento "no meio" do reflow)
+                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+                const canvasForm = await html2canvas(clone, {
+                    scale: 2,
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff'
+                });
+
+                document.body.removeChild(clone);
+                clone = null;
+
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+
+                adicionarImagemPaginada(pdf, canvasForm, 10);
 
                 for (const foto of fotosBase64) {
                     await adicionarFotoComoPagina(pdf, foto, 8);
@@ -1067,11 +1119,10 @@
 
                 pdf.save(`RAC_${chamadoNum}.pdf`);
             } catch (error) {
-                fotosContainer.style.display = displayOriginalContainer;
-                fotosTitulo.style.display = displayOriginalTitulo;
                 console.error("Erro ao gerar PDF:", error);
-                alert("Não foi possível gerar o PDF. Tente novamente.");
+                alert("Não foi possível gerar o PDF. Tente novamente.\n\nDetalhe técnico: " + (error && error.message ? error.message : error));
             } finally {
+                if (clone && clone.parentNode) clone.parentNode.removeChild(clone);
                 btnPdf.innerText = textoOriginal;
                 btnPdf.disabled = false;
             }
