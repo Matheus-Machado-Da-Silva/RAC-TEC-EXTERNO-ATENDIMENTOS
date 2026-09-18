@@ -697,7 +697,72 @@
             closeSignatureModal();
         }
 
-        function comprimirImagem(file, maxDim = 1000, qualidade = 0.6) {
+        // Lê a tag EXIF de orientação de uma foto (necessário porque fotos de
+        // celular guardam a rotação como metadado, e o canvas ignora isso por
+        // padrão — sem esta leitura, a foto sai "deitada" no PDF mesmo que
+        // apareça em pé na galeria do telefone).
+        function lerOrientacaoExif(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const view = new DataView(e.target.result);
+                        if (view.getUint16(0, false) !== 0xFFD8) { resolve(1); return; }
+                        const length = view.byteLength;
+                        let offset = 2;
+                        while (offset < length) {
+                            const marker = view.getUint16(offset, false);
+                            offset += 2;
+                            if (marker === 0xFFE1) {
+                                if (view.getUint32(offset + 2, false) !== 0x45786966) { resolve(1); return; }
+                                const tiffOffset = offset + 8;
+                                const little = view.getUint16(tiffOffset, false) === 0x4949;
+                                const firstIfdOffset = view.getUint32(tiffOffset + 4, little);
+                                let dirOffset = tiffOffset + firstIfdOffset;
+                                const tags = view.getUint16(dirOffset, little);
+                                dirOffset += 2;
+                                for (let i = 0; i < tags; i++) {
+                                    const entryOffset = dirOffset + (i * 12);
+                                    if (view.getUint16(entryOffset, little) === 0x0112) {
+                                        resolve(view.getUint16(entryOffset + 8, little));
+                                        return;
+                                    }
+                                }
+                                resolve(1);
+                                return;
+                            } else if ((marker & 0xFF00) !== 0xFF00) {
+                                break;
+                            } else {
+                                offset += view.getUint16(offset, false);
+                            }
+                        }
+                        resolve(1);
+                    } catch (err) {
+                        resolve(1);
+                    }
+                };
+                reader.onerror = () => resolve(1);
+                reader.readAsArrayBuffer(file.slice(0, 128 * 1024));
+            });
+        }
+
+        // Aplica no contexto do canvas a transformação necessária para
+        // corrigir cada um dos 8 valores possíveis de orientação EXIF.
+        function aplicarOrientacaoExif(ctx, orientacao, width, height) {
+            switch (orientacao) {
+                case 2: ctx.transform(-1, 0, 0, 1, width, 0); break;
+                case 3: ctx.transform(-1, 0, 0, -1, width, height); break;
+                case 4: ctx.transform(1, 0, 0, -1, 0, height); break;
+                case 5: ctx.transform(0, 1, 1, 0, 0, 0); break;
+                case 6: ctx.transform(0, 1, -1, 0, height, 0); break;
+                case 7: ctx.transform(0, -1, -1, 0, height, width); break;
+                case 8: ctx.transform(0, -1, 1, 0, 0, width); break;
+                default: break; // 1 = normal, nada a fazer
+            }
+        }
+
+        async function comprimirImagem(file, maxDim = 1000, qualidade = 0.6) {
+            const orientacao = await lerOrientacaoExif(file);
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = (e) => {
@@ -711,11 +776,16 @@
                             width = Math.round(width * (maxDim / height));
                             height = maxDim;
                         }
+
+                        const rotacionada90ou270 = orientacao >= 5 && orientacao <= 8;
                         const canvasTmp = document.createElement('canvas');
-                        canvasTmp.width = width;
-                        canvasTmp.height = height;
+                        canvasTmp.width = rotacionada90ou270 ? height : width;
+                        canvasTmp.height = rotacionada90ou270 ? width : height;
+
                         const ctxTmp = canvasTmp.getContext('2d');
+                        aplicarOrientacaoExif(ctxTmp, orientacao, width, height);
                         ctxTmp.drawImage(img, 0, 0, width, height);
+
                         resolve(canvasTmp.toDataURL('image/jpeg', qualidade));
                     };
                     img.onerror = reject;
@@ -954,6 +1024,13 @@
                         scale: 2,
                         useCORS: true,
                         allowTaint: true,
+                        // Força a captura numa largura "de computador" (900px)
+                        // independente da largura real da tela do celular.
+                        // Sem isso, no celular o formulário quebra linha demais,
+                        // fica muito alto e estreito, e ao ser encaixado numa
+                        // página A4 o conteúdo real acaba quase todo empurrado
+                        // para a página seguinte, deixando a primeira em branco.
+                        windowWidth: 900,
                         onclone: (clonedDoc) => {
                             const sigImg = clonedDoc.getElementById('sig-image-preview');
                             if (sigImg && sigImg.getAttribute('src')) {
@@ -962,6 +1039,14 @@
                                 sigImg.style.maxWidth = 'none';
                                 sigImg.style.width = '220px';
                                 sigImg.style.height = 'auto';
+                            }
+                            // Garante que o formulário clonado use a largura
+                            // "de computador" completa (800px), como no design
+                            // original, mesmo tendo sido aberto num celular.
+                            const screenClonado = clonedDoc.getElementById('form-screen');
+                            if (screenClonado) {
+                                screenClonado.style.width = '800px';
+                                screenClonado.style.maxWidth = '800px';
                             }
                         }
                     },
