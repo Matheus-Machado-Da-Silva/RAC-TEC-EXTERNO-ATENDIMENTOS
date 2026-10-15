@@ -1148,15 +1148,27 @@
                 // copiados para o clone e que a altura de cada um seja
                 // recalculada para a largura de 780px (a altura herdada do
                 // celular não serve aqui, o texto quebra em outras linhas).
+                // O html2canvas desenha o texto de <textarea> de forma própria
+                // e acaba cortando textos longos. Por isso, na cópia usada
+                // para o PDF, cada textarea é trocado por um bloco de texto
+                // comum (div) com a mesma aparência, que cresce sozinho com
+                // o conteúdo e quebra as linhas normalmente.
                 const textareasOriginais = original.querySelectorAll('textarea');
                 const textareasClone = clone.querySelectorAll('textarea');
                 textareasClone.forEach((ta, i) => {
-                    if (textareasOriginais[i]) ta.value = textareasOriginais[i].value;
+                    const valor = textareasOriginais[i] ? textareasOriginais[i].value : '';
+                    const bloco = document.createElement('div');
+                    bloco.textContent = valor;
+                    bloco.style.cssText =
+                        'width:100%;box-sizing:border-box;padding:6px;' +
+                        'border:1px solid #777;border-radius:3px;background:#fff;' +
+                        'font-family:Arial,sans-serif;font-size:13px;line-height:1.35;' +
+                        'min-height:50px;white-space:pre-wrap;' +
+                        'word-wrap:break-word;overflow-wrap:break-word;word-break:break-word;';
+                    ta.parentNode.replaceChild(bloco, ta);
                 });
 
                 document.body.appendChild(clone);
-
-                resizeAllTextareas(clone);
 
                 await esperarImagensCarregarem(clone);
                 // Dá um instante para o navegador aplicar o layout de 780px
