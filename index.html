@@ -302,6 +302,24 @@
         }
         .user-info strong { color: var(--primary-color); }
         .btn-edit { background-color: #f0ad4e; color: #000; }
+        .search-box { margin-bottom: 12px; }
+        .search-box input { padding: 10px; font-size: 15px; }
+        .search-box small { display: block; color: #666; margin-top: 4px; font-size: 12px; }
+        .tecnico-btn {
+            display: block;
+            width: 100%;
+            margin: 0 0 10px;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: left;
+            background-color: var(--primary-color);
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .tecnico-btn small { display: block; font-weight: normal; font-size: 12px; opacity: 0.9; margin-top: 2px; }
         /* ---------- Ficha somente leitura (técnicos) ---------- */
         #form-screen.readonly .media-section,
         #form-screen.readonly #btn-salvar {
@@ -500,7 +518,7 @@
         </div>
 
         <div class="action-bar">
-            <button class="btn-action btn-back" onclick="showScreen('home-screen')">Voltar</button>
+            <button class="btn-action btn-back" onclick="voltarDoFormulario()">Voltar</button>
             <button class="btn-action btn-save" id="btn-salvar" onclick="salvarFicha()">Salvar Ficha</button>
             <button class="btn-action btn-pdf" id="btn-pdf" onclick="gerarPDF()">Download da Ficha (PDF)</button>
             <button class="btn-action btn-whatsapp" id="btn-whatsapp" onclick="enviarWhatsApp()">WhatsApp Operacional</button>
@@ -508,12 +526,17 @@
     </div>
 
     <div id="saved-screen" class="screen">
-        <h2>Fichas (RAC) Salvas</h2>
+        <h2 id="saved-title">Fichas (RAC) Salvas</h2>
+        <div id="saved-search-box" class="search-box" style="display:none;">
+            <input type="text" id="busca_fichas" inputmode="search" autocomplete="off" autocorrect="off" spellcheck="false"
+                   placeholder="Buscar: nº chamado, posto, patrimônio, data, modelo...">
+            <small id="busca-contador"></small>
+        </div>
         <div id="saved-list-container">
             <p>Buscando fichas...</p>
         </div>
         <div class="action-bar" style="margin-top: 20px;">
-            <button class="btn-action btn-back" onclick="showScreen('home-screen')">Voltar</button>
+            <button class="btn-action btn-back" onclick="voltarDaListaSalva()">Voltar</button>
         </div>
     </div>
 
@@ -577,6 +600,9 @@
         const CHAVE_SESSAO = "rac_usuario_logado";
         let currentUser = null;   // { login, nome, admin }
         let editingId = null;     // id da ficha em edição (somente admin)
+        let viewingTecnico = null; // admin: nome do técnico cujas fichas estão abertas (null = lista de técnicos)
+        let tecnicosAdmin = [];    // admin: nomes exibidos nos botões de técnicos
+        let veioDaLista = false;   // true quando a ficha aberta veio da lista de fichas salvas
 
         let canvas, ctx, painting = false;
         let hasSignature = false;
@@ -590,6 +616,7 @@
 
         document.addEventListener("DOMContentLoaded", () => {
             setupLogin();
+            setupBusca();
             initSignaturePad();
             setupAutoDateTime();
             setupMediaValidation();
@@ -646,6 +673,8 @@
             editingId = null;
             currentSavedData = null;
             savedFichasCache = [];
+            viewingTecnico = null;
+            veioDaLista = false;
             try { localStorage.removeItem(CHAVE_SESSAO); } catch (e) { /* ignora */ }
             document.getElementById('saved-list-container').innerHTML = "";
             showScreen('login-screen');
@@ -721,6 +750,7 @@
         function openNewForm() {
             if (!currentUser || currentUser.admin) { showScreen(currentUser ? 'home-screen' : 'login-screen'); return; }
             editingId = null;
+            veioDaLista = false;
             setFormReadOnly(false);
             document.getElementById('btn-salvar').innerText = "Salvar Ficha";
             document.getElementById('rac-form').reset();
@@ -1426,60 +1456,189 @@
             window.open(`https://api.whatsapp.com/send?text=${encodedText}`, '_blank');
         }
 
-        async function openSavedList() {
+        // ---------- Busca nas fichas salvas ----------
+
+        // Minúsculas e sem acentos, para "Posto São Paulo" casar com "sao paulo"
+        function normalizarBusca(texto) {
+            return String(texto === undefined || texto === null ? '' : texto)
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase();
+        }
+
+        // Junta num único texto todos os campos pesquisáveis da ficha
+        function montarTextoBusca(d) {
+            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d.data_atendimento || '');
+            const dataBR = m ? `${m[3]}/${m[2]}/${m[1]}` : '';   // 15/10/2026
+            const partes = [
+                d.cliente,                 // nome do posto / cliente
+                d.num_chamado,
+                d.data_abertura,
+                d.data_atendimento, dataBR,
+                d.horario_atendimento,
+                d.responsavel,
+                d.contato_responsavel, String(d.contato_responsavel || '').replace(/\D/g, ''),
+                d.modelo_veiculos,
+                d.num_patrimonio,
+                d.utilizacao,
+                d.solicitacao,
+                d.veiculos_saindo,
+                d.veiculos_entrando,
+                d.observacoes
+            ];
+            return normalizarBusca(partes.join(' | '));
+        }
+
+        function setupBusca() {
+            document.getElementById('busca_fichas').addEventListener('input', renderListaFichas);
+        }
+
+        function limparBusca() {
+            document.getElementById('busca_fichas').value = '';
+        }
+
+        // ---------- Fichas salvas ----------
+
+        async function openSavedList(manterVisao) {
             if (!currentUser) { showScreen('login-screen'); return; }
+            if (!manterVisao) {
+                viewingTecnico = null;
+                limparBusca();
+            }
             showScreen('saved-screen');
             const container = document.getElementById('saved-list-container');
+            document.getElementById('saved-search-box').style.display = 'none';
             container.innerHTML = "<p>Buscando fichas...</p>";
 
             try {
                 // Técnico: só as fichas assinadas por ele. Administrador: todas.
-                // (A ordenação é feita aqui no aplicativo para não exigir índice no Firestore)
+                // (A ordenação e a busca são feitas aqui no aplicativo, sem exigir índice no Firestore)
                 let consulta = db.collection("fichas_rac");
                 if (!currentUser.admin) {
                     consulta = consulta.where("colaborador_brmobility", "==", currentUser.nome);
                 }
                 const snapshot = await consulta.get();
-                savedFichasCache = [];
-
-                if (snapshot.empty) {
-                    container.innerHTML = "<p>Nenhuma ficha salva encontrada.</p>";
-                    return;
-                }
 
                 const itens = [];
-                snapshot.forEach(doc => itens.push({ id: doc.id, data: doc.data() }));
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    itens.push({ id: doc.id, data: data, busca: montarTextoBusca(data) });
+                });
                 itens.sort((a, b) => String(b.data.createdAt || '').localeCompare(String(a.data.createdAt || '')));
+                savedFichasCache = itens;
 
-                let html = "";
-                itens.forEach(item => {
-                    const data = item.data;
-                    const index = savedFichasCache.length;
-                    savedFichasCache.push(item);
+                renderSaved();
+            } catch (error) {
+                console.error("Erro ao carregar fichas:", error);
+                container.innerHTML = "<p>Erro ao carregar fichas salvas.</p>";
+            }
+        }
 
-                    const botoesAdmin = currentUser.admin ? `
+
+        // Decide o que mostrar: botões de técnicos (admin) ou a lista de fichas com busca
+        function renderSaved() {
+            const titulo = document.getElementById('saved-title');
+            const caixaBusca = document.getElementById('saved-search-box');
+            const container = document.getElementById('saved-list-container');
+
+            if (currentUser.admin && viewingTecnico === null) {
+                titulo.innerText = "Fichas (RAC) Salvas";
+                caixaBusca.style.display = 'none';
+
+                // Técnicos cadastrados + qualquer outro nome que apareça nas fichas
+                const nomes = Object.keys(USUARIOS).filter(k => !USUARIOS[k].admin).map(k => USUARIOS[k].nome);
+                savedFichasCache.forEach(f => {
+                    const n = f.data.colaborador_brmobility;
+                    if (n && nomes.indexOf(n) === -1) nomes.push(n);
+                });
+                tecnicosAdmin = nomes;
+
+                let html = "<p style='margin-top:0;'>Selecione o técnico para ver as fichas:</p>";
+                nomes.forEach((nome, i) => {
+                    const qtd = savedFichasCache.filter(f => f.data.colaborador_brmobility === nome).length;
+                    html += `<button class="tecnico-btn" onclick="abrirFichasTecnico(${i})">${escapeHtml(nome)}<small>${qtd} ficha(s)</small></button>`;
+                });
+                container.innerHTML = html;
+                return;
+            }
+
+            titulo.innerText = currentUser.admin ? ("Fichas de " + viewingTecnico) : "Fichas (RAC) Salvas";
+            caixaBusca.style.display = 'block';
+            renderListaFichas();
+        }
+
+        function abrirFichasTecnico(i) {
+            viewingTecnico = tecnicosAdmin[i];
+            limparBusca();
+            renderSaved();
+        }
+
+        function voltarDaListaSalva() {
+            if (currentUser && currentUser.admin && viewingTecnico !== null) {
+                viewingTecnico = null;
+                limparBusca();
+                renderSaved();
+            } else {
+                showScreen('home-screen');
+            }
+        }
+
+        function voltarDoFormulario() {
+            if (veioDaLista && currentUser) {
+                openSavedList(true);   // recarrega para refletir edições e mantém técnico/busca
+            } else {
+                showScreen('home-screen');
+            }
+        }
+
+        // Desenha as fichas (do técnico em exibição) já filtradas pela busca
+        function renderListaFichas() {
+            const container = document.getElementById('saved-list-container');
+            const contador = document.getElementById('busca-contador');
+            const termos = normalizarBusca(document.getElementById('busca_fichas').value).split(/\s+/).filter(Boolean);
+
+            // Fichas do técnico em exibição (para o técnico, já vêm só as dele)
+            const doTecnico = [];
+            savedFichasCache.forEach((item, index) => {
+                if (currentUser.admin && item.data.colaborador_brmobility !== viewingTecnico) return;
+                doTecnico.push({ item: item, index: index });
+            });
+
+            const filtradas = doTecnico.filter(x => termos.every(t => x.item.busca.indexOf(t) !== -1));
+
+            contador.innerText = termos.length
+                ? `${filtradas.length} de ${doTecnico.length} ficha(s) encontrada(s)`
+                : `${doTecnico.length} ficha(s)`;
+
+            if (doTecnico.length === 0) {
+                container.innerHTML = "<p>Nenhuma ficha salva encontrada.</p>";
+                return;
+            }
+            if (filtradas.length === 0) {
+                container.innerHTML = "<p>Nenhuma ficha encontrada para essa busca.</p>";
+                return;
+            }
+
+            let html = "";
+            filtradas.forEach(({ item, index }) => {
+                const data = item.data;
+                const botoesAdmin = currentUser.admin ? `
                                 <button class="btn-action btn-edit" style="padding: 5px 10px; font-size: 12px;" onclick="recarregarFicha(${index}, true)">Editar</button>
                                 <button class="btn-action btn-delete" style="padding: 5px 10px; font-size: 12px;" onclick="excluirFicha(${index})">Excluir</button>` : '';
-                    const linhaTecnico = currentUser.admin
-                        ? `<br><small>Técnico: ${escapeHtml(data.colaborador_brmobility)}</small>` : '';
 
-                    html += `
+                html += `
                         <div class="saved-item">
                             <div>
                                 <strong>Chamado:</strong> ${escapeHtml(data.num_chamado)} | <strong>Cliente:</strong> ${escapeHtml(data.cliente)}<br>
-                                <small>Data: ${escapeHtml(data.data_atendimento)} - ${escapeHtml(data.horario_atendimento)}</small>${linhaTecnico}
+                                <small>Data: ${escapeHtml(data.data_atendimento)} - ${escapeHtml(data.horario_atendimento)}</small><br>
+                                <small>Modelo: ${escapeHtml(data.modelo_veiculos)} | Patrimônio: ${escapeHtml(data.num_patrimonio)}</small>
                             </div>
                             <div class="saved-item-actions">
                                 <button class="btn-action btn-save" style="padding: 5px 10px; font-size: 12px;" onclick="recarregarFicha(${index})">Visualizar/Baixar</button>${botoesAdmin}
                             </div>
                         </div>
                     `;
-                });
-                container.innerHTML = html;
-            } catch (error) {
-                console.error("Erro ao carregar fichas:", error);
-                container.innerHTML = "<p>Erro ao carregar fichas salvas.</p>";
-            }
+            });
+            container.innerHTML = html;
         }
 
         function escapeHtml(value) {
@@ -1548,6 +1707,7 @@
 
             // Técnicos (e o admin em "Visualizar") veem a ficha travada; só o admin edita
             editingId = modoEdicao ? item.id : null;
+            veioDaLista = true;
             setFormReadOnly(!modoEdicao);
             document.getElementById('btn-salvar').innerText = "Salvar Alterações";
 
@@ -1571,7 +1731,7 @@
             try {
                 await db.collection("fichas_rac").doc(item.id).delete();
                 alert("Ficha excluída com sucesso.");
-                openSavedList();
+                openSavedList(true);
             } catch (error) {
                 console.error("Erro ao excluir ficha:", error);
                 alert("Erro ao excluir a ficha. Verifique a conexão e tente novamente.");
