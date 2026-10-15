@@ -123,9 +123,16 @@
             box-sizing: border-box;
             background-color: #fff;
         }
+        /* Campos de texto longo: crescem automaticamente conforme o conteúdo
+           (a altura é ajustada via JavaScript; sem barra de rolagem interna
+           e sem o "puxador" manual de redimensionamento) */
         textarea {
-            resize: vertical;
+            resize: none;
+            overflow: hidden;
             height: 50px;
+            min-height: 50px;
+            line-height: 1.35;
+            font-family: Arial, sans-serif;
         }
         .radio-group {
             display: flex;
@@ -496,11 +503,57 @@
             setupAutoDateTime();
             setupMediaValidation();
             setupPhoneMask();
+            setupAutoGrowTextareas();
         });
+
+        // ---------- Campos de texto que crescem automaticamente ----------
+
+        // Ajusta a altura de um textarea ao tamanho do texto digitado.
+        // Primeiro zera a altura (para o navegador recalcular, inclusive
+        // quando o usuário apaga texto) e depois usa o scrollHeight.
+        function autoResizeTextarea(el) {
+            if (!el) return;
+            el.style.height = 'auto';
+            // scrollHeight não inclui a borda; como usamos box-sizing:border-box,
+            // somamos a espessura da borda para não aparecer rolagem interna.
+            const bordas = el.offsetHeight - el.clientHeight;
+            const novaAltura = Math.max(50, el.scrollHeight + bordas);
+            el.style.height = novaAltura + 'px';
+        }
+
+        function resizeAllTextareas(root) {
+            (root || document).querySelectorAll('textarea').forEach(autoResizeTextarea);
+        }
+
+        function setupAutoGrowTextareas() {
+            document.querySelectorAll('textarea').forEach(el => {
+                el.addEventListener('input', () => autoResizeTextarea(el));
+            });
+            // Se a largura da tela mudar (ex.: girar o celular), o texto
+            // quebra em outras linhas, então recalculamos as alturas.
+            window.addEventListener('resize', () => {
+                if (document.getElementById('form-screen').classList.contains('active')) {
+                    resizeAllTextareas();
+                }
+            });
+            window.addEventListener('orientationchange', () => {
+                setTimeout(() => {
+                    if (document.getElementById('form-screen').classList.contains('active')) {
+                        resizeAllTextareas();
+                    }
+                }, 200);
+            });
+        }
 
         function showScreen(screenId) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
             document.getElementById(screenId).classList.add('active');
+            // Textareas dentro de telas ocultas (display:none) não conseguem
+            // medir o conteúdo; por isso ajustamos quando a tela do formulário
+            // passa a ficar visível (nova ficha ou ficha recarregada).
+            if (screenId === 'form-screen') {
+                resizeAllTextareas();
+            }
         }
 
         function openNewForm() {
@@ -1091,7 +1144,19 @@
                     sigImgClone.style.height = 'auto';
                 }
 
+                // Garante que os textos digitados nos campos grandes sejam
+                // copiados para o clone e que a altura de cada um seja
+                // recalculada para a largura de 780px (a altura herdada do
+                // celular não serve aqui, o texto quebra em outras linhas).
+                const textareasOriginais = original.querySelectorAll('textarea');
+                const textareasClone = clone.querySelectorAll('textarea');
+                textareasClone.forEach((ta, i) => {
+                    if (textareasOriginais[i]) ta.value = textareasOriginais[i].value;
+                });
+
                 document.body.appendChild(clone);
+
+                resizeAllTextareas(clone);
 
                 await esperarImagensCarregarem(clone);
                 // Dá um instante para o navegador aplicar o layout de 780px
@@ -1260,6 +1325,7 @@
                 document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
             }
 
+            // showScreen já recalcula a altura dos campos de texto longo
             showScreen('form-screen');
             document.getElementById('btn-pdf').style.display = 'inline-block';
             document.getElementById('btn-whatsapp').style.display = 'inline-block';
