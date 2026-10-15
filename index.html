@@ -114,7 +114,7 @@
             margin-bottom: 2px;
             font-size: 12px;
         }
-        input[type="text"], input[type="tel"], input[type="date"], input[type="time"], select, textarea {
+        input[type="text"], input[type="tel"], input[type="date"], input[type="time"], input[type="password"], select, textarea {
             padding: 6px;
             border: 1px solid #777;
             border-radius: 3px;
@@ -271,6 +271,53 @@
             gap: 8px;
             flex-wrap: wrap;
         }
+        /* ---------- Login ---------- */
+        .login-box {
+            max-width: 400px;
+            margin: 20px auto 0;
+            text-align: left;
+        }
+        .login-box label {
+            display: block;
+            font-weight: bold;
+            font-size: 13px;
+            margin: 12px 0 4px;
+        }
+        .login-box input {
+            padding: 12px;
+            font-size: 16px;
+        }
+        #login-erro {
+            color: #dc3545;
+            font-size: 13px;
+            font-weight: bold;
+            min-height: 18px;
+            margin-top: 10px;
+            text-align: center;
+        }
+        .user-info {
+            font-size: 14px;
+            color: #333;
+            margin: 0 0 5px;
+        }
+        .user-info strong { color: var(--primary-color); }
+        .btn-edit { background-color: #f0ad4e; color: #000; }
+        /* ---------- Ficha somente leitura (técnicos) ---------- */
+        #form-screen.readonly .media-section,
+        #form-screen.readonly #btn-salvar {
+            display: none;
+        }
+        #form-screen.readonly .signature-preview-container {
+            cursor: default;
+        }
+        #form-screen.readonly input:disabled,
+        #form-screen.readonly select:disabled,
+        #form-screen.readonly textarea:disabled {
+            color: #000;
+            -webkit-text-fill-color: #000;
+            opacity: 1;
+            background-color: #fff;
+        }
         .fotos-grid {
             display: flex;
             flex-wrap: wrap;
@@ -288,11 +335,26 @@
 </head>
 <body>
 
-    <div id="home-screen" class="screen active">
+    <div id="login-screen" class="screen active">
         <h1>BRMobility</h1>
         <p>Relatório de Atendimento ao Cliente (RAC)</p>
-        <button class="home-btn" onclick="openNewForm()">Nova Ficha (RAC) de atendimento</button>
+        <div class="login-box">
+            <label for="login_usuario">Usuário</label>
+            <input type="text" id="login_usuario" placeholder="@usuario" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username">
+            <label for="login_senha">Senha</label>
+            <input type="password" id="login_senha" autocomplete="current-password">
+            <div id="login-erro"></div>
+            <button class="home-btn" id="btn-login" onclick="fazerLogin()">Entrar</button>
+        </div>
+    </div>
+
+    <div id="home-screen" class="screen">
+        <h1>BRMobility</h1>
+        <p>Relatório de Atendimento ao Cliente (RAC)</p>
+        <p class="user-info" id="home-usuario"></p>
+        <button class="home-btn" id="btn-nova-ficha" onclick="openNewForm()">Nova Ficha (RAC) de atendimento</button>
         <button class="home-btn" style="background-color: #555;" onclick="openSavedList()">Fichas (RAC) Salvas</button>
+        <button class="home-btn" style="background-color: #6c757d; font-size: 15px; padding: 10px;" onclick="fazerLogout()">Sair</button>
     </div>
 
     <div id="form-screen" class="screen">
@@ -410,7 +472,7 @@
                 <div class="rac-footer">
                     <div class="form-group">
                         <label>Colaborador BRMobility</label>
-                        <input type="text" id="colaborador_brmobility" value="Téc. Externo Brandon de Freitas" readonly>
+                        <input type="text" id="colaborador_brmobility" value="" readonly>
                     </div>
                     <div class="form-group">
                         <label>Assinatura do Responsável</label>
@@ -486,7 +548,35 @@
         }
         const db = firebase.firestore();
 
-        const SENHA_EXCLUSAO = "BRM@2026";
+        // ---------- Usuários do sistema ----------
+        // Para cadastrar um novo técnico, basta copiar um dos blocos abaixo:
+        //   chave  = login em minúsculas, SEM o "@"
+        //   senha  = senha de acesso
+        //   nome   = texto que aparece como assinatura do colaborador na ficha
+        //            (as fichas do técnico são filtradas por este nome, então
+        //             ele não pode ser alterado depois que já existirem fichas)
+        //   admin  = true só para o administrador (único que edita/exclui)
+        const USUARIOS = {
+            "brandonfreitas": {
+                senha: "BrandonBRM2025",
+                nome: "Téc. Externo Brandon de Freitas",
+                admin: false
+            },
+            "leonardonogueira": {
+                senha: "LeonardoNogueiraBRM2025",
+                nome: "Téc. & Representante Comercial Leonardo Nogueira",
+                admin: false
+            },
+            "adm": {
+                senha: "BRM@2026",
+                nome: "Administrador",
+                admin: true
+            }
+        };
+
+        const CHAVE_SESSAO = "rac_usuario_logado";
+        let currentUser = null;   // { login, nome, admin }
+        let editingId = null;     // id da ficha em edição (somente admin)
 
         let canvas, ctx, painting = false;
         let hasSignature = false;
@@ -499,12 +589,84 @@
         let savedFichasCache = [];
 
         document.addEventListener("DOMContentLoaded", () => {
+            setupLogin();
             initSignaturePad();
             setupAutoDateTime();
             setupMediaValidation();
             setupPhoneMask();
             setupAutoGrowTextareas();
         });
+
+        // ---------- Login / sessão ----------
+
+        function normalizarLogin(valor) {
+            return String(valor || '').trim().replace(/^@+/, '').toLowerCase();
+        }
+
+        function setupLogin() {
+            ['login_usuario', 'login_senha'].forEach(id => {
+                document.getElementById(id).addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') fazerLogin();
+                });
+            });
+
+            // Mantém o usuário conectado ao reabrir o app no mesmo aparelho
+            let loginSalvo = null;
+            try { loginSalvo = localStorage.getItem(CHAVE_SESSAO); } catch (e) { loginSalvo = null; }
+            if (loginSalvo && USUARIOS[loginSalvo]) {
+                currentUser = Object.assign({ login: loginSalvo }, USUARIOS[loginSalvo]);
+                delete currentUser.senha;
+                abrirHome();
+            }
+        }
+
+        function fazerLogin() {
+            const login = normalizarLogin(document.getElementById('login_usuario').value);
+            const senha = document.getElementById('login_senha').value;
+            const erro = document.getElementById('login-erro');
+            const usuario = Object.prototype.hasOwnProperty.call(USUARIOS, login) ? USUARIOS[login] : null;
+
+            if (!usuario || usuario.senha !== senha) {
+                erro.innerText = "Usuário ou senha incorretos.";
+                return;
+            }
+
+            erro.innerText = "";
+            currentUser = Object.assign({ login: login }, usuario);
+            delete currentUser.senha;
+            try { localStorage.setItem(CHAVE_SESSAO, login); } catch (e) { /* ignora */ }
+
+            document.getElementById('login_usuario').value = "";
+            document.getElementById('login_senha').value = "";
+            abrirHome();
+        }
+
+        function fazerLogout() {
+            currentUser = null;
+            editingId = null;
+            currentSavedData = null;
+            savedFichasCache = [];
+            try { localStorage.removeItem(CHAVE_SESSAO); } catch (e) { /* ignora */ }
+            document.getElementById('saved-list-container').innerHTML = "";
+            showScreen('login-screen');
+        }
+
+        function abrirHome() {
+            document.getElementById('home-usuario').innerHTML =
+                "Conectado como <strong>" + escapeHtml(currentUser.nome) + "</strong>" +
+                (currentUser.admin ? " (administrador)" : "");
+            // O administrador só consulta/edita/exclui fichas; quem cria fichas são os técnicos
+            document.getElementById('btn-nova-ficha').style.display = currentUser.admin ? 'none' : 'block';
+            showScreen('home-screen');
+        }
+
+        // Trava (somente leitura) ou libera todos os campos da ficha
+        function setFormReadOnly(somenteLeitura) {
+            document.querySelectorAll('#rac-form input, #rac-form select, #rac-form textarea').forEach(el => {
+                el.disabled = somenteLeitura;
+            });
+            document.getElementById('form-screen').classList.toggle('readonly', somenteLeitura);
+        }
 
         // ---------- Campos de texto que crescem automaticamente ----------
 
@@ -557,8 +719,13 @@
         }
 
         function openNewForm() {
+            if (!currentUser || currentUser.admin) { showScreen(currentUser ? 'home-screen' : 'login-screen'); return; }
+            editingId = null;
+            setFormReadOnly(false);
+            document.getElementById('btn-salvar').innerText = "Salvar Ficha";
             document.getElementById('rac-form').reset();
-            document.getElementById('colaborador_brmobility').value = "Téc. Externo Brandon de Freitas";
+            document.getElementById('colaborador_brmobility').value = currentUser.nome;
+            currentSavedData = null;
             setupAutoDateTime();
             hasSignature = false;
             document.getElementById('assinatura_base64').value = "";
@@ -710,6 +877,7 @@
         }
 
         function openSignatureModal() {
+            if (document.getElementById('form-screen').classList.contains('readonly')) return;
             const modal = document.getElementById('signature-modal');
             document.body.classList.add('modal-open');
             modal.classList.add('active');
@@ -930,6 +1098,11 @@
         }
 
         async function salvarFicha() {
+            if (!currentUser) { showScreen('login-screen'); return; }
+            if (editingId && !currentUser.admin) {
+                alert("Apenas o administrador pode editar fichas.");
+                return;
+            }
             const form = document.getElementById('rac-form');
             if (!form.checkValidity()) {
                 form.reportValidity();
@@ -978,22 +1151,32 @@
                     assinatura_responsavel: assinaturaValor,
                     fotos_base64: fotosBase64,
                     qtd_fotos: fotosBase64.length,
-                    tem_video: selectedVideoName ? "Sim" : "Não",
+                    tem_video: selectedVideoName ? "Sim" : ((editingId && currentSavedData && currentSavedData.tem_video) || "Não"),
                     createdAt: new Date().toISOString()
                 };
 
-                const docRef = await db.collection("fichas_rac").add(formData);
-                formData.id = docRef.id;
-                currentSavedData = formData;
-
-                alert("Ficha salva com sucesso!");
+                if (editingId) {
+                    // Edição (somente administrador): atualiza a ficha existente,
+                    // preservando a data de criação original
+                    delete formData.createdAt;
+                    formData.updatedAt = new Date().toISOString();
+                    await db.collection("fichas_rac").doc(editingId).update(formData);
+                    currentSavedData = Object.assign({}, currentSavedData, formData, { id: editingId });
+                    alert("Ficha atualizada com sucesso!");
+                } else {
+                    formData.tecnico_login = currentUser.login;
+                    const docRef = await db.collection("fichas_rac").add(formData);
+                    formData.id = docRef.id;
+                    currentSavedData = formData;
+                    alert("Ficha salva com sucesso!");
+                }
                 document.getElementById('btn-pdf').style.display = 'inline-block';
                 document.getElementById('btn-whatsapp').style.display = 'inline-block';
             } catch (error) {
                 console.error("Erro ao salvar: ", error);
                 alert("Erro ao salvar a ficha. Verifique a conexão e tente novamente.\n\nDetalhe técnico: " + (error && error.message ? error.message : error));
             } finally {
-                btnSalvar.innerText = "Salvar Ficha";
+                btnSalvar.innerText = editingId ? "Salvar Alterações" : "Salvar Ficha";
                 btnSalvar.disabled = false;
             }
         }
@@ -1168,6 +1351,10 @@
                     ta.parentNode.replaceChild(bloco, ta);
                 });
 
+                // Campos travados (modo somente leitura) saem acinzentados em alguns
+                // aparelhos; na cópia do PDF liberamos para manter o texto preto.
+                clone.querySelectorAll('[disabled]').forEach(el => el.removeAttribute('disabled'));
+
                 document.body.appendChild(clone);
 
                 await esperarImagensCarregarem(clone);
@@ -1240,12 +1427,19 @@
         }
 
         async function openSavedList() {
+            if (!currentUser) { showScreen('login-screen'); return; }
             showScreen('saved-screen');
             const container = document.getElementById('saved-list-container');
             container.innerHTML = "<p>Buscando fichas...</p>";
 
             try {
-                const snapshot = await db.collection("fichas_rac").orderBy("createdAt", "desc").get();
+                // Técnico: só as fichas assinadas por ele. Administrador: todas.
+                // (A ordenação é feita aqui no aplicativo para não exigir índice no Firestore)
+                let consulta = db.collection("fichas_rac");
+                if (!currentUser.admin) {
+                    consulta = consulta.where("colaborador_brmobility", "==", currentUser.nome);
+                }
+                const snapshot = await consulta.get();
                 savedFichasCache = [];
 
                 if (snapshot.empty) {
@@ -1253,21 +1447,30 @@
                     return;
                 }
 
+                const itens = [];
+                snapshot.forEach(doc => itens.push({ id: doc.id, data: doc.data() }));
+                itens.sort((a, b) => String(b.data.createdAt || '').localeCompare(String(a.data.createdAt || '')));
+
                 let html = "";
-                snapshot.forEach(doc => {
-                    const data = doc.data();
+                itens.forEach(item => {
+                    const data = item.data;
                     const index = savedFichasCache.length;
-                    savedFichasCache.push({ id: doc.id, data: data });
+                    savedFichasCache.push(item);
+
+                    const botoesAdmin = currentUser.admin ? `
+                                <button class="btn-action btn-edit" style="padding: 5px 10px; font-size: 12px;" onclick="recarregarFicha(${index}, true)">Editar</button>
+                                <button class="btn-action btn-delete" style="padding: 5px 10px; font-size: 12px;" onclick="excluirFicha(${index})">Excluir</button>` : '';
+                    const linhaTecnico = currentUser.admin
+                        ? `<br><small>Técnico: ${escapeHtml(data.colaborador_brmobility)}</small>` : '';
 
                     html += `
                         <div class="saved-item">
                             <div>
                                 <strong>Chamado:</strong> ${escapeHtml(data.num_chamado)} | <strong>Cliente:</strong> ${escapeHtml(data.cliente)}<br>
-                                <small>Data: ${escapeHtml(data.data_atendimento)} - ${escapeHtml(data.horario_atendimento)}</small>
+                                <small>Data: ${escapeHtml(data.data_atendimento)} - ${escapeHtml(data.horario_atendimento)}</small>${linhaTecnico}
                             </div>
                             <div class="saved-item-actions">
-                                <button class="btn-action btn-save" style="padding: 5px 10px; font-size: 12px;" onclick="recarregarFicha(${index})">Visualizar/Baixar</button>
-                                <button class="btn-action btn-delete" style="padding: 5px 10px; font-size: 12px;" onclick="excluirFicha(${index})">Excluir</button>
+                                <button class="btn-action btn-save" style="padding: 5px 10px; font-size: 12px;" onclick="recarregarFicha(${index})">Visualizar/Baixar</button>${botoesAdmin}
                             </div>
                         </div>
                     `;
@@ -1287,7 +1490,10 @@
                 .replace(/>/g, '&gt;');
         }
 
-        function recarregarFicha(index) {
+        function recarregarFicha(index, modoEdicao) {
+            if (!currentUser) { showScreen('login-screen'); return; }
+            // Edição é exclusiva do administrador; técnicos só visualizam/baixam
+            modoEdicao = !!modoEdicao && currentUser.admin;
             const item = savedFichasCache[index];
             if (!item) return;
             const data = item.data;
@@ -1295,7 +1501,10 @@
             currentSavedData = Object.assign({ id: item.id }, data);
 
             document.getElementById('cliente').value = data.cliente || '';
-            document.getElementById('num_chamado').value = data.num_chamado || '';
+            // no modo de edição o "#" sai do campo (o campo só aceita números e o "#" é recolocado ao salvar)
+            document.getElementById('num_chamado').value = modoEdicao
+                ? String(data.num_chamado || '').replace(/^#/, '')
+                : (data.num_chamado || '');
             document.getElementById('data_abertura').value = data.data_abertura || '';
             document.getElementById('data_atendimento').value = data.data_atendimento || '';
             document.getElementById('horario_atendimento').value = data.horario_atendimento || '';
@@ -1337,6 +1546,11 @@
                 document.getElementById('foto-contador').innerText = "Nenhuma foto selecionada";
             }
 
+            // Técnicos (e o admin em "Visualizar") veem a ficha travada; só o admin edita
+            editingId = modoEdicao ? item.id : null;
+            setFormReadOnly(!modoEdicao);
+            document.getElementById('btn-salvar').innerText = "Salvar Alterações";
+
             // showScreen já recalcula a altura dos campos de texto longo
             showScreen('form-screen');
             document.getElementById('btn-pdf').style.display = 'inline-block';
@@ -1344,16 +1558,12 @@
         }
 
         async function excluirFicha(index) {
-            const item = savedFichasCache[index];
-            if (!item) return;
-
-            const senha = prompt("Digite a senha para excluir esta ficha:");
-            if (senha === null) return;
-
-            if (senha !== SENHA_EXCLUSAO) {
-                alert("Senha incorreta. A ficha não foi excluída.");
+            if (!currentUser || !currentUser.admin) {
+                alert("Apenas o administrador pode excluir fichas.");
                 return;
             }
+            const item = savedFichasCache[index];
+            if (!item) return;
 
             const confirmar = confirm(`Tem certeza que deseja excluir a ficha do chamado ${item.data.num_chamado || ''}?\n\nEsta ação não pode ser desfeita.`);
             if (!confirmar) return;
